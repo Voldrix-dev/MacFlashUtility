@@ -885,7 +885,8 @@ class MacFlashGUI(QWidget):
 
             iface = (self.options.get("dhcp_interface") or "").strip()
             if not iface:
-                self.log_signal("[DHCP] Интерфейс не выбран — сервер не запущен (работа без DHCP)")
+                if self.options.get("debug", False):
+                    self.log_signal("[DHCP] Интерфейс не выбран — сервер не запущен (работа без DHCP)")
                 self._update_dhcp_status(False)
                 return
 
@@ -902,10 +903,11 @@ class MacFlashGUI(QWidget):
                 lease_time=lease,
                 log_callback=self._on_dhcp_log,
                 lease_callback=self._on_dhcp_lease,
+                debug=self.options.get("debug", False),
             )
             self.dhcp_worker.start()
             self._update_dhcp_status(True)
-            self.log_signal(f"[DHCP] Сервер запущен на {iface} -> {assigned_ip} (интерфейс должен быть настроен через sudo ip link/addr)")
+            self.log_signal(f"[DHCP] Сервер запущен на {iface} -> {assigned_ip}")
         except Exception as e:
             self._update_dhcp_status(False)
             self.log_signal(f"[DHCP] Ошибка запуска сервера: {e} (работа без DHCP)")

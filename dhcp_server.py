@@ -51,7 +51,7 @@ class DhcpServer:
     _running_instances = set()
 
     def __init__(self, interface, server_ip, assigned_ip, subnet_mask, lease_time,
-                 log_callback=None, lease_callback=None):
+                 log_callback=None, lease_callback=None, debug: bool = False):
         self.interface = interface
         self.server_ip = server_ip
         self.assigned_ip = assigned_ip
@@ -59,6 +59,7 @@ class DhcpServer:
         self.lease_time = int(lease_time)
         self.log_callback = log_callback or (lambda *_: None)
         self.lease_callback = lease_callback or (lambda *_: None)
+        self.debug = debug
         self.running = False
         self.broadcast_address = None
         self._ipr = None
@@ -168,7 +169,8 @@ class DhcpServer:
     def cleanup_interface(self):
         """Сбросить настройки интерфейса при завершении."""
         try:
-            self._log(f"Очистка настроек интерфейса {self.interface}...", "info")
+            if self._debug_enabled():
+                self._log(f"Очистка настроек интерфейса {self.interface}...", "info")
             if self._ipr is None:
                 self._ipr = IPRoute()
             idxs = self._ipr.link_lookup(ifname=self.interface)
@@ -182,7 +184,8 @@ class DhcpServer:
                     self._ipr.link("set", index=idx, state="down")
                 except Exception:
                     pass
-                self._log("Интерфейс очищен и отключен.", "info")
+                if self._debug_enabled():
+                    self._log("Интерфейс очищен и отключен.", "info")
         except Exception as e:
             self._log(f"Ошибка при очистке интерфейса: {e}", "error")
         finally:
@@ -196,20 +199,39 @@ class DhcpServer:
     # ------------------------------------------------------------------ #
     # Внутренняя логика
     # ------------------------------------------------------------------ #
+    def _debug_enabled(self):
+        return getattr(self, "debug", False)
+
     def _run(self):
         """Основной цикл сервера (выполняется в daemon-потоке)."""
         self._log(f"Мини-DHCP сервер запущен на {self.interface} -> выдаёт {self.assigned_ip}", "info")
-        self._log(f"Интерфейс {self.interface} должен быть настроен через sudo (ip link set up + ip addr add) перед запуском", "info")
-
+        # Интерфейс должен быть настроен через sudo (ip link set up + ip addr add) перед запуском
+        try:
+            if self._ipr is None:
+                self._ipr = IPRoute()
+            idxs = self._ipr.link_lookup(ifname=self.interface)
+            if idxs:
+                idx = idxs[0]
+                try:
+                    self._ipr.link("set", index=idx, state="up")
+                except Exception:
+                    pass
+                try:
+                    self._ipr.addr("add", index=idx, address=self.server_ip, prefixlen=self._prefixlen())
+                except Exception:
+                    pass
+        except Exception as e:
+            self._log(f"Не удалось настроить интерфейс {self.interface}: {e}", "warn")
         try:
             self._sniffer = AsyncSniffer(
-                filter="udp and (port 67 or 68)",
-                iface=self.interface,
-                prn=self.handle_dhcp,
-                store=0,
-            )
+                    filter="udp and (port 67 or 68)",
+                    iface=self.interface,
+                    prn=self.handle_dhcp,
+                    store=0,
+                )
             self._sniffer.start()
-            self._log(f"Sniffer запущен на {self.interface}, жду DHCP-пакеты...", "info")
+            if self._debug_enabled():
+                self._log(f"Sniffer запущен на {self.interface}, жду DHCP-пакеты...", "info")
             # Ждём stop() с таймаутом
             while self.running:
                 self._stop_event.wait(timeout=0.5)
