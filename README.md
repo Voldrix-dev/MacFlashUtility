@@ -2,6 +2,10 @@
 
 **English** | [Русский](#русский)
 
+## Screenshot
+
+![MacFU](docs/screenshot.png)
+
 Desktop utility built with **PySide6** for flashing MAC addresses and tracking device serial numbers. An operator scans S/N and B/N barcodes — the utility validates against a database, generates EEPROM, flashes the device over **SSH**, verifies the result, and records data in **PostgreSQL** and **Google Sheets**.
 
 ## Features
@@ -55,6 +59,10 @@ Specify your license (e.g. MIT) before publishing.
 ---
 
 # Русский
+
+## Скриншот
+
+![MacFU](docs/screenshot.png)
 
 Desktop-утилита на **PySide6** для прошивки MAC-адресов и учёта серийных номеров устройств. Оператор сканирует S/N и B/N штрих-кодами — утилита проверяет БД, генерирует EEPROM, прошивает устройство по **SSH**, проверяет результат и фиксирует данные в **PostgreSQL** и **Google Sheets**.
 
