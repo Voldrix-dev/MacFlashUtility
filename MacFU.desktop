@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=MacFU
+Comment=MAC flashing and serial number accounting utility
+Exec=/home/pcuser/DEV/MacFU/run.sh
+Icon=/home/pcuser/DEV/MacFU/Data/run.svg
+Terminal=false
+Categories=Development;Utility;
+Keywords=mac;flash;eeprom;serial;uart;ssh;
+StartupNotify=true

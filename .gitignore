@@ -1,0 +1,44 @@
+# --- Секреты и ключи ---
+Data/quixotic-*.json
+*.pem
+*.key
+*.p12
+
+# --- Пользовательские конфиги и runtime-данные ---
+Data/options.json
+Data/conditional_format.json
+Data/board_counter.txt
+Data/pixelSize.json
+
+# --- Логи и временные файлы ---
+*.log
+Data/*.log
+Data/fault.log
+Data/launcher.log
+*.tmp
+*.bak
+*.swp
+*~
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# --- Сгенерированные артефакты ---
+eeprom_files/
+
+# --- Мусор / архив ---
+archeve/
+.agents/
+
+# --- Дампы и выгрузки ---
+Data/*raw*.txt
+Data/*установлен*.txt
+
+# --- OS ---
+.DS_Store
+Thumbs.db
