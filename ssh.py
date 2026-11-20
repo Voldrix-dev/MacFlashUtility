@@ -280,25 +280,26 @@ def _ssh_handshake_ok(host, user, password, timeout=10):
     return loop.run_until_complete(_ssh_handshake_ok_async(host, user, password, timeout))
 
 
-def wait_for_ssh_stable(host, user, password, timeout=120, delay=5, required_ok=1, log=print, stop_event=None):
-    """Ждём устойчивого SSH: успешный хендшейк."""
+def wait_for_ssh_stable(host, user, password, timeout=120, delay=2, required_ok=1, log=print, stop_event=None):
+    """Ждём устойчивого SSH: успешный хендшейк. Возвращает wrapper при успехе, None при таймауте."""
     log("[WAIT] Ожидаем стабильный SSH...")
     t0 = time.time()
     ok_count = 0
     while time.time() - t0 < timeout:
         if stop_event is not None and stop_event.is_set():
             log("[STOP] Операция остановлена оператором")
-            return False
+            return None
         if _ssh_handshake_ok(host, user, password):
             ok_count += 1
             if ok_count >= required_ok:
                 log("[OK] SSH стабилизировался")
-                return True
+                # Создаём и возвращаем wrapper, чтобы избежать двойного хендшейка
+                return SSHConnection(host, user, password, timeout=10)
         else:
             ok_count = 0
         time.sleep(delay)
     log("[ERR] SSH так и не стал стабильным")
-    return False
+    return None
 
 
 async def _connect_async(host, user, password, timeout=10):
@@ -319,26 +320,14 @@ def _connect_ssh_with_retry(host, user, password, log=print, attempts=12, delay=
     log("[WAIT] Ожидаем открытие SSH-порта...")
     if not wait_for_ssh_port(host, timeout=60, delay=2, log=lambda *_: None, stop_event=stop_event):
         raise Exception("SSH порт не открылся вовремя")
-    # Затем ждём стабильный хендшейк
-    if not wait_for_ssh_stable(host, user, password, timeout=120, delay=5, required_ok=1, log=log, stop_event=stop_event):
+    # Затем ждём стабильный хендшейк и получаем готовый wrapper
+    wrapper = wait_for_ssh_stable(host, user, password, timeout=120, delay=2, required_ok=1, log=log, stop_event=stop_event)
+    if wrapper is None:
         raise Exception("SSH порт не стабилизировался")
     
-    for attempt in range(1, attempts + 1):
-        if stop_event is not None and stop_event.is_set():
-            raise Exception("Операция остановлена оператором")
-        try:
-            wrapper = SSHConnection(host, user, password, timeout=10)
-            with _ACTIVE_SSH_LOCK:
-                _ACTIVE_SSH_CLIENTS.add(wrapper)
-            return wrapper
-        except Exception as e:
-            msg = str(e)
-            log(f"[SSH] Попытка {attempt} не удалась: {msg}")
-            if "connection" in msg.lower() or "timeout" in msg.lower():
-                log("[SSH] Похоже, SSH занят или ещё не поднялся. Ожидаем...")
-            wait_for_ssh_port(host, timeout=30, delay=2, log=lambda *_: None, stop_event=stop_event)
-            time.sleep(delay if attempt < 4 else delay + 2)
-    raise Exception("Не удалось подключиться по SSH после всех попыток")
+    with _ACTIVE_SSH_LOCK:
+        _ACTIVE_SSH_CLIENTS.add(wrapper)
+    return wrapper
 
 
 def flash_mac_from_spi_asyncssh(wrapper, host, log, mtd0=None):
