@@ -38,6 +38,22 @@ def safe_single_shot(msec, func): # Безопасный вызов QTimer.singl
     except Exception:
         QTimer.singleShot(msec, func)
 
+
+def _run_flash_worker(params: dict) -> dict:
+    """Запуск воркера в отдельном процессе (standalone function for pickling)."""
+    from flash_worker import flash_worker
+    import multiprocessing
+    log_queue = multiprocessing.Queue()
+    params["stop_flag"] = multiprocessing.Event()
+    result = flash_worker(params, log_queue)
+    while not log_queue.empty():
+        try:
+            log_queue.get_nowait()
+        except Exception:
+            pass
+    return result
+
+
 class Toast(QLabel):
     """Неблокирующее всплывающее уведомление.
 
@@ -1772,20 +1788,6 @@ class MacFlashGUI(QWidget):
         self._flash_check_timer = QTimer(self)
         self._flash_check_timer.timeout.connect(self._check_flash_future)
         self._flash_check_timer.start(500)
-
-    def _run_flash_worker(params: dict) -> dict:
-        """Запуск воркера в отдельном процессе (standalone function for pickling)."""
-        from flash_worker import flash_worker
-        import multiprocessing
-        log_queue = multiprocessing.Queue()
-        params["stop_flag"] = multiprocessing.Event()
-        result = flash_worker(params, log_queue)
-        while not log_queue.empty():
-            try:
-                log_queue.get_nowait()
-            except Exception:
-                pass
-        return result
 
     def _drain_flash_log_queue(self):
         """Чтение логов из очереди воркера."""
