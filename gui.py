@@ -571,6 +571,15 @@ class MacFlashGUI(QWidget):
             self.log_signal(f"[INFO] Применён отложенный B/N: {self.serial_number} | {self.board_number}")
         self._set_workflow("Этап: MAC подтверждён, запись в БД")
         board = (self.board_number or "").strip()
+        if not self.options.get("auto_db_update", True):
+            self.log_signal("[INFO] Обновление БД отключено опцией auto_db_update")
+            self._set_workflow("Этап: Готово (БД отключена)")
+            self.stop_operation_timer()
+            self._set_field_color("sn", "#66cc66")
+            self._set_field_color("bn", "#66cc66")
+            if self.options.get("auto_reset", True):
+                safe_single_shot(2000, lambda: self.reset_fields(reset_timer=False))
+            return
         if board:
             self.ready_for_bn = False
             if self.options.get("run_sheets", False):
@@ -1629,12 +1638,16 @@ class MacFlashGUI(QWidget):
                 self.wanMac = pb.get("wan", self.wanMac)
                 self.pending_bn = None
                 self.log_signal(f"[INFO] Применён отложенный B/N: {self.serial_number} | {self.board_number}")
-            if was_test:
+            if was_test or not self.options.get("auto_db_update", True):
                 self.stop_operation_timer()
                 self._set_field_color("sn", "#66cc66")
                 self._set_field_color("bn", "#66cc66")
                 self.update_finish_status(True)
-                self._set_workflow("Этап: Готово (тест)")
+                if not self.options.get("auto_db_update", True):
+                    self._set_workflow("Этап: Готово (БД отключена)")
+                    self.log_signal("[INFO] Обновление БД отключено опцией auto_db_update")
+                else:
+                    self._set_workflow("Этап: Готово (тест)")
                 if self.options.get("auto_reset", True):
                     safe_single_shot(2000, lambda: self.reset_fields(reset_timer=False))
                 return
@@ -1799,6 +1812,7 @@ class MacFlashGUI(QWidget):
             "run_sheets": False,
             "auto_check": True,
             "auto_reset": True,
+            "auto_db_update": True,
             "require_board_number": True,
             "send_board_number": True,
             "admin_session_seconds": 600,
@@ -1947,7 +1961,7 @@ class MacFlashGUI(QWidget):
                    "gs_sheet_cols", "gs_sheet_refresh_seconds",
                    "gs_style_rules_path", "gs_row_template"}
         ui_keys = {"debug", "recovery_mod", "board_check", "auto_check",
-                   "auto_reset", "auto_board", "disable_shell_on_flash",
+                   "auto_reset", "auto_db_update", "auto_board", "disable_shell_on_flash",
                    "install_script", "board_prefix", "flash_mode",
                    "serial_prefix"}
         ssh_keys = {"ssh_user", "ssh_password", "phone_path",
