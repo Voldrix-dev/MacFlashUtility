@@ -1760,7 +1760,7 @@ class MacFlashGUI(QWidget):
         
         self._flash_executor = ProcessPoolExecutor(max_workers=1)
         self._flash_future = self._flash_executor.submit(
-            self._run_flash_worker, params
+            _run_flash_worker, params
         )
         
         # Таймер для чтения логов из очереди
@@ -1773,15 +1773,13 @@ class MacFlashGUI(QWidget):
         self._flash_check_timer.timeout.connect(self._check_flash_future)
         self._flash_check_timer.start(500)
 
-    def _run_flash_worker(self, params: dict) -> dict:
-        """Запуск воркера в отдельном процессе."""
+    def _run_flash_worker(params: dict) -> dict:
+        """Запуск воркера в отдельном процессе (standalone function for pickling)."""
         from flash_worker import flash_worker
         import multiprocessing
         log_queue = multiprocessing.Queue()
         params["stop_flag"] = multiprocessing.Event()
-        # Подменяем stop_flag на multiprocessing.Event для процесса
         result = flash_worker(params, log_queue)
-        # Сбрасываем оставшиеся логи
         while not log_queue.empty():
             try:
                 log_queue.get_nowait()
