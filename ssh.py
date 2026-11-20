@@ -267,7 +267,12 @@ def _connect_ssh_with_retry(host, user, password, log=print, attempts=12, delay=
     last_err = None
     if stop_event is not None and stop_event.is_set():
         raise Exception("Операция остановлена оператором")
-    if not wait_for_ssh_stable(host, user, password, timeout=120, delay=2, required_ok=3, log=log, stop_event=stop_event):
+    # Сначала ждём, пока откроется TCP-порт 22 (устройство может загружаться дольше, чем отвечает на пинг)
+    log("[WAIT] Ожидаем открытие SSH-порта...")
+    if not wait_for_ssh_port(host, timeout=60, delay=2, log=lambda *_: None, stop_event=stop_event):
+        raise Exception("SSH порт не открылся вовремя")
+    # Затем ждём стабильный хендшейк (dropbear может резетить при частых коннектах)
+    if not wait_for_ssh_stable(host, user, password, timeout=120, delay=5, required_ok=1, log=log, stop_event=stop_event):
         raise Exception("SSH порт не стабилизировался")
     for attempt in range(1, attempts + 1):
         if stop_event is not None and stop_event.is_set():
