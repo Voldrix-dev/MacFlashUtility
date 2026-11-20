@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QTimer, Signal, QThread, QMetaObject, QCoreApplic
 from PySide6.QtGui import QFont, QAction
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QMenuBar,
                                QDialog, QMessageBox, QInputDialog, QFrame, QMenu, QGraphicsDropShadowEffect,
-                               QComboBox)
+                               QComboBox, QWidgetAction)
 from thread_ import WorkerSignals, DeviceWatcher, run_in_thread
 from db import (check_serial, update_mac_single, update_mac_dual, add_board_column, peek_next_board_id, commit_board_id)
 from option import OptionsDialog
@@ -203,7 +203,9 @@ class MacFlashGUI(QWidget):
         if idx >= 0:
             self.cb_language_menu.setCurrentIndex(idx)
         self.cb_language_menu.currentIndexChanged.connect(self._on_language_changed)
-        menu_settings.addWidget(self.cb_language_menu)
+        lang_action = QWidgetAction(self)
+        lang_action.setDefaultWidget(self.cb_language_menu)
+        menu_settings.addAction(lang_action)
         
         menu_settings.addSeparator()
         self.act_admin_login = QAction("Вход администратора (системный пароль)", self)
