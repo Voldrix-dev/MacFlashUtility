@@ -127,14 +127,14 @@ def exec_ssh(wrapper, cmd, timeout=60):
 
 def exec_ssh_stdin(wrapper, cmd, stdin_data, timeout=60):
     """Выполняет SSH-команду, передавая stdin_data в stdin. Возвращает (code, stdout, stderr).
-    Бинарные данные передаются через base64 (cat | base64 -d), чтобы избежать проблем с кодировкой."""
+    Бинарные данные передаются через base64 (base64 -d | cmd), чтобы избежать проблем с кодировкой."""
     import base64
     async def _exec(stdin_data=stdin_data):
         if isinstance(stdin_data, bytes):
-            # Бинарные данные: base64 -> remote base64 -d
+            # Бинарные данные: base64 -> pipe в команду
             b64 = base64.b64encode(stdin_data).decode()
-            # Используем heredoc чтобы избежать проблем с кавычками
-            b64_cmd = f"base64 -d > /dev/stdin << 'B64EOF'\n{b64}\nB64EOF\n{cmd}"
+            # Используем base64 -d | cmd через heredoc
+            b64_cmd = f"base64 -d << 'B64EOF' | {cmd}\n{b64}\nB64EOF"
             result = await wrapper.conn.run(b64_cmd, timeout=timeout)
             return result.exit_status, result.stdout, result.stderr
         else:
