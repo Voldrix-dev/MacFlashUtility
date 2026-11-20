@@ -3,6 +3,7 @@ import logging
 import threading
 import json
 import subprocess
+import re
 import qtawesome as qta
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QMetaObject, QCoreApplication
@@ -1343,6 +1344,7 @@ class MacFlashGUI(QWidget):
             self.bn_field.setText(text)
 
     def log_signal(self, text: str):
+        """Add timestamp and emit to signal (for GUI thread logging)."""
         ts = datetime.now().strftime("%H:%M:%S")
         text = f"[{ts}] {text}"
         try:
@@ -1354,39 +1356,6 @@ class MacFlashGUI(QWidget):
         if self.options.get("debug", False):
             self.log_signal(f"[DEBUG] {text}")
 
-    def select_sheet(self, name):
-        if not getattr(self, "gs_worker", None) or not getattr(self, "gs_thread", None) or not self.gs_thread.isRunning():
-            self.log_signal("[WARN] Google Worker/GS отсутствует — пропускаю select_sheet")
-            return False
-        # Проверяем, что виджет ещё жив (не удалён)
-        try:
-            if not self.isVisible():
-                return False
-        except RuntimeError:
-            return False
-        # Выбор листа выполняется в потоке worker (не блокирует GUI)
-        self.request_select_sheet.emit(name)
-        # Ждём подтверждения из worker-потока (макс 10 сек)
-        from PySide6.QtCore import QEventLoop
-        loop = QEventLoop()
-        result = {"ok": False}
-        finished = [False]
-        def _on_result(data):
-            if finished[0]:
-                return
-            finished[0] = True
-            if data.get("ok"):
-                result["ok"] = True
-            loop.quit()
-        self.gs_worker.result.connect(_on_result, type=Qt.ConnectionType.QueuedConnection)
-        QTimer.singleShot(10000, loop.quit)
-        loop.exec()
-        try:
-            self.gs_worker.result.disconnect(_on_result)
-        except Exception:
-            pass
-        return result["ok"]
-        
     def handle_google_result(self, data: dict):
         if self._closing:
             return
@@ -1395,8 +1364,13 @@ class MacFlashGUI(QWidget):
         else: self._signals.log.emit(f"[GS][ERR] {msg}")
 
     def log_append(self, text: str):
+        """Add timestamp if missing and append to log widget."""
         if self._closing:
             return
+        # Add timestamp if message doesn't already have one
+        if not re.match(r"^\[\d{2}:\d{2}:\d{2}\]", text):
+            ts = datetime.now().strftime("%H:%M:%S")
+            text = f"[{ts}] {text}"
         self.log.append_log(text)
 
     def _task_signals(self, finished_handler=None):
