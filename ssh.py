@@ -2,11 +2,56 @@ import os, time
 import traceback, threading
 import json
 import paramiko
+from paramiko import transport as paramiko_transport
 import subprocess
 import socket
 import re, io
 from scp import SCPClient
 from db import make_eeprom_bytes
+
+# Алгоритмы, совместимые с dropbear (устройства часто используют старые версии)
+_DROPBEAR_KEX = (
+    "curve25519-sha256@libssh.org",
+    "ecdh-sha2-nistp256",
+    "diffie-hellman-group14-sha256",
+    "diffie-hellman-group14-sha1",
+)
+_DROPBEAR_CIPHERS = (
+    "aes128-ctr",
+    "aes256-ctr",
+    "aes128-cbc",
+    "aes256-cbc",
+)
+_DROPBEAR_MACS = (
+    "hmac-sha2-256",
+    "hmac-sha2-512",
+    "hmac-sha1",
+)
+
+
+def _make_ssh_client():
+    """Создаёт SSHClient с настройками для dropbear."""
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # Сохраняем оригинальные предпочтения и ставим свои на время коннекта
+    orig_pref_kex = paramiko_transport.Transport._preferred_kex
+    orig_pref_ciphers = paramiko_transport.Transport._preferred_ciphers
+    orig_pref_macs = paramiko_transport.Transport._preferred_macs
+    paramiko_transport.Transport._preferred_kex = _DROPBEAR_KEX
+    paramiko_transport.Transport._preferred_ciphers = _DROPBEAR_CIPHERS
+    paramiko_transport.Transport._preferred_macs = _DROPBEAR_MACS
+    # Хак: оборачиваем connect, чтобы восстановить предпочтения после создания транспорта
+    orig_connect = ssh.connect
+    def wrapped_connect(*args, **kwargs):
+        try:
+            return orig_connect(*args, **kwargs)
+        finally:
+            paramiko_transport.Transport._preferred_kex = orig_pref_kex
+            paramiko_transport.Transport._preferred_ciphers = orig_pref_ciphers
+            paramiko_transport.Transport._preferred_macs = orig_pref_macs
+    ssh.connect = wrapped_connect
+    return ssh
+
 
 _ACTIVE_SSH_LOCK = threading.Lock()
 _ACTIVE_SSH_CLIENTS = set()
@@ -177,13 +222,11 @@ def wait_for_ssh_port(host, timeout=30, delay=2, log=print, stop_event=None):
             time.sleep(delay)
     log("[ERR] SSH порт не открылся вовремя")
     return False
-
 def _ssh_handshake_ok(host, user, password, timeout=6):
     """Реальная проверка SSH: полный хендшейк+аутентификация, без баннера-гонки."""
     ssh = None
     try:
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh = _make_ssh_client()
         ssh.connect(host, username=user, password=password, timeout=timeout,
                     banner_timeout=timeout, auth_timeout=timeout,
                     look_for_keys=False, allow_agent=False)
@@ -218,6 +261,7 @@ def wait_for_ssh_stable(host, user, password, timeout=90, delay=2, required_ok=3
     log("[ERR] SSH так и не стал стабильным")
     return False
 
+
 def _connect_ssh_with_retry(host, user, password, log=print, attempts=12, delay=3, stop_event=None):
     """Подключение SSH с ожиданием порта и перезапуском сессии на каждой попытке."""
     last_err = None
@@ -229,8 +273,7 @@ def _connect_ssh_with_retry(host, user, password, log=print, attempts=12, delay=
         if stop_event is not None and stop_event.is_set():
             raise Exception("Операция остановлена оператором")
         try:
-            ssh = paramiko.SSHClient()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh = _make_ssh_client()
             ssh.connect(host, username=user, password=password, timeout=10, banner_timeout=12, auth_timeout=12, look_for_keys=False, allow_agent=False)
             with _ACTIVE_SSH_LOCK:
                 _ACTIVE_SSH_CLIENTS.add(ssh)
