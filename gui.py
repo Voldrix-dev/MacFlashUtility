@@ -1766,7 +1766,6 @@ class MacFlashGUI(QWidget):
             "nand_command": self.options.get("nand_command", ""),
             "flash_erase": self.options.get("flash_erase", ""),
             "mtd0": self.options.get("mtd0", ""),
-            "stop_flag": self.current_stop_event,
         }
         
         if not self.busy:
