@@ -8,7 +8,8 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QMetaObject, QCoreApplication
 from PySide6.QtGui import QFont, QAction
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QMenuBar,
-                               QDialog, QMessageBox, QInputDialog, QFrame, QMenu, QGraphicsDropShadowEffect)
+                               QDialog, QMessageBox, QInputDialog, QFrame, QMenu, QGraphicsDropShadowEffect,
+                               QComboBox)
 from thread_ import WorkerSignals, DeviceWatcher, run_in_thread
 from db import (check_serial, update_mac_single, update_mac_dual, add_board_column, peek_next_board_id, commit_board_id)
 from option import OptionsDialog
@@ -140,15 +141,16 @@ class MacFlashGUI(QWidget):
         self._idle_toasts = []
         self._dhcp_check_timer = QTimer(self)
         self._dhcp_check_timer.timeout.connect(self._check_dhcp_devices)
-        self._dhcp_check_timer.start(5000)
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
         self._signals = WorkerSignals()
         self._closing = False
         self._signals.log.connect(self.log_append)
         self.flash_mac_confirmed.connect(self._on_flash_mac_confirmed)
         self.dhcp_start_ready.connect(self._on_dhcp_start_ready)
+        self.dhcp_start_ready.connect(self._on_dhcp_start_ready)
         self.device_skipped.connect(self._on_device_skipped)
         self._build_ui()
+        self._dhcp_check_timer.start(5000)
         self.gs_manager = None
         self.gs_worker = None
         self.gs_thread = None
@@ -554,6 +556,8 @@ class MacFlashGUI(QWidget):
 
     def _update_skip_status(self):
         """Индикатор «Пропуск»: зелёный — нет, жёлтый — есть пропущенные."""
+        if not hasattr(self, "skip_status_label") or self.skip_status_label is None:
+            return
         skipped = any(info.get("notified") for info in self._dhcp_devices.values())
         if skipped:
             St.status_level(self.skip_status_label, "yellow")
