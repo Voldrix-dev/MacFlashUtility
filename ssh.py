@@ -341,25 +341,35 @@ def _connect_ssh_with_retry(host, user, password, log=print, attempts=12, delay=
     raise Exception("Не удалось подключиться по SSH после всех попыток")
 
 
-def flash_mac_from_spi_asyncssh(wrapper, host, log, mtd0=None):
-    """Читает MAC из SPI и устанавливает его в eth1addr"""
+def flash_mac_from_spi_asyncssh(wrapper, host, log, mtd0=None, expected_len=12):
+    """Читает MAC из SPI и устанавливает его в eth1addr.
+    
+    expected_len: сколько байт прочитать (6 для single MAC, 12 для dual)
+    """
     log(f"[SPI] Чтение MAC с {host}")
     remote_mac_path = "/tmp/mac_address"
     mtd_dev = (mtd0 or "").split()[0]
     if not mtd_dev:
         return False, "Не задан mtd0 в настройках"
-    code, out, err = exec_ssh(wrapper, f"dd if={mtd_dev} of={remote_mac_path} bs=1 count=12", timeout=20)
+    code, out, err = exec_ssh(wrapper, f"dd if={mtd_dev} of={remote_mac_path} bs=1 count={expected_len}", timeout=20)
     if code != 0:
         log(f"[SPI] dd returned {code}, stderr: {err.strip()}")
         return False, f"Ошибка чтения EEPROM (dd): {err.strip() or 'no output'}"
     try:
-        raw_mac = read_remote_file_bytes(wrapper, remote_mac_path, size=12)
+        raw_mac = read_remote_file_bytes(wrapper, remote_mac_path, size=expected_len)
     except Exception as e:
         return False, f"Ошибка чтения {remote_mac_path} по SFTP: {e}"
     if len(raw_mac) < 6:
         return False, f"Некорректный размер MAC-данных: {len(raw_mac)} байт"
-    lan_mac = format_mac_bytes(raw_mac[:6])
-    wan_mac = format_mac_bytes(raw_mac[6:12]) if len(raw_mac) >= 12 else lan_mac
+    
+    # Для single MAC (6 байт) используем только WAN
+    if expected_len == 6 or len(raw_mac) == 6:
+        wan_mac = format_mac_bytes(raw_mac[:6])
+        lan_mac = wan_mac
+    else:
+        lan_mac = format_mac_bytes(raw_mac[:6])
+        wan_mac = format_mac_bytes(raw_mac[6:12]) if len(raw_mac) >= 12 else lan_mac
+    
     log(f"[SPI] LAN MAC: {lan_mac}")
     log(f"[SPI] WAN MAC: {wan_mac}")
     desired_env_mac = wan_mac.lower()
@@ -454,7 +464,8 @@ def eeprom_flash(lan_mac, wan_mac, log, user=None, password=None, phone_path=Non
         eeprom_data = make_eeprom_bytes(lan_mac, wan_mac)
         lan_clean = (lan_mac or "").replace(":", "").lower()
         wan_clean = (wan_mac or "").replace(":", "").lower()
-        expected = bytes.fromhex((lan_clean + wan_clean) if lan_clean else (wan_clean + wan_clean))
+        # expected должен совпадать с тем, что записали
+        expected = eeprom_data
         log(f"[FLASH] EEPROM сформирован в памяти ({len(eeprom_data)} байт)")
 
         wrapper = _connect_ssh_with_retry(host, user, password, log=log, attempts=12, delay=3, stop_event=stop_event)
@@ -490,21 +501,22 @@ def eeprom_flash(lan_mac, wan_mac, log, user=None, password=None, phone_path=Non
             if code != 0 and "reboot" not in cmd:
                 return {"ok": False, "msg": f"Ошибка шага: {desc} (code {code})"}
 
-        # Проверка: читаем первые 12 байт и сравниваем с ожидаемым MAC.
+        # Проверка: читаем записанные байты и сравниваем с ожидаемым.
         mtd_dev = mtd0.split()[0] if mtd0 else ""
         if not mtd_dev:
             return {"ok": False, "msg": "Не задан mtd0 в настройках"}
-        vcode, vout, verr = exec_ssh(wrapper, f"dd if={mtd_dev} bs=1 count=12 2>/dev/null | od -v -An -tx1", timeout=60)
+        read_len = len(expected)
+        vcode, vout, verr = exec_ssh(wrapper, f"dd if={mtd_dev} bs=1 count={read_len} 2>/dev/null | od -v -An -tx1", timeout=60)
         readback = (vout or "").split()
-        if vcode == 0 and len(readback) >= 12:
-            actual = bytes.fromhex("".join(readback[:12]))
-            if actual != expected[:12]:
-                return {"ok": False, "msg": f"EEPROM mismatch: {actual.hex()} != {expected[:12].hex()}"}
+        if vcode == 0 and len(readback) >= read_len:
+            actual = bytes.fromhex("".join(readback[:read_len]))
+            if actual != expected:
+                return {"ok": False, "msg": f"EEPROM mismatch: {actual.hex()} != {expected.hex()}"}
             log("[OK] EEPROM совпадает с ожидаемым MAC")
         else:
             log("[WARN] Не удалось прочитать EEPROM для проверки")
 
-        ok, msg = flash_mac_from_spi_asyncssh(wrapper, host, log, mtd0=mtd0)
+        ok, msg = flash_mac_from_spi_asyncssh(wrapper, host, log, mtd0=mtd0, expected_len=len(expected))
         if ok and msg is None:
             log("[INFO] MAC уже совпадает (ребут не требуется)")
             return {"ok": True, "msg": "EEPROM прошита (MAC уже совпадает), ожидаем устройство через DHCP"}

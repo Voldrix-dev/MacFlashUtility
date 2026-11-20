@@ -45,11 +45,20 @@ def get_counter_file():
     return v
 
 
-def make_eeprom_bytes(lan_mac: str, wan_mac: str) -> bytes:
-    """Собирает MAC (lan+wan или wan+wan) в байтах, без файлов."""
+def make_eeprom_bytes(lan_mac: str, wan_mac: str, mac_type: str = "dual") -> bytes:
+    """Собирает EEPROM данные.
+    
+    mac_type:
+        "dual"  - 12 байт: LAN (6) + WAN (6)
+        "single" - 6 байт: только WAN
+    """
     lan_clean = (lan_mac or "").replace(":", "").lower()
     wan_clean = (wan_mac or "").replace(":", "").lower()
-    return bytes.fromhex((lan_clean + wan_clean) if lan_clean else (wan_clean + wan_clean))
+    
+    if mac_type == "single" or not lan_clean:
+        return bytes.fromhex(wan_clean)
+    else:
+        return bytes.fromhex(lan_clean + wan_clean)
 
 
 def check_serial(param: str, debug: bool = False):
