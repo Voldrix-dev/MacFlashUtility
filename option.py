@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Property, QPropertyAnimation
 from PySide6.QtGui import QPainter, QColor, QBrush
+from i18n import tr, get_current_locale, set_locale
 from style import opstion_style
 from dhcp_server import DhcpServer
 
@@ -53,7 +54,7 @@ class ToggleSwitch(QWidget):
 class OptionsDialog(QDialog):
     def __init__(self, parent=None, opts=None):
         super().__init__(parent)
-        self.setWindowTitle("Опции")
+        self.setWindowTitle(tr("Options"))
         self.setModal(True)
         self.setMinimumWidth(460)
         self.opts = opts or {}
@@ -65,9 +66,26 @@ class OptionsDialog(QDialog):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        header = QLabel("Параметры работы утилиты")
+        header = QLabel(tr("Utility parameters"))
         header.setStyleSheet("font-size: 12pt; font-weight: 700; color: #eef5ff;")
         layout.addWidget(header)
+
+        # Language selector
+        lang_layout = QHBoxLayout()
+        lang_label = QLabel(tr("Language:"))
+        lang_label.setStyleSheet("font-size: 10pt; color: #aaccff;")
+        self.cb_language = QComboBox()
+        self.cb_language.addItem(tr("Russian"), "ru")
+        self.cb_language.addItem(tr("English"), "en")
+        current_locale = get_current_locale()
+        idx = self.cb_language.findData(current_locale)
+        if idx >= 0:
+            self.cb_language.setCurrentIndex(idx)
+        self.cb_language.currentIndexChanged.connect(self._on_language_changed)
+        lang_layout.addWidget(lang_label)
+        lang_layout.addWidget(self.cb_language)
+        lang_layout.addStretch()
+        layout.addLayout(lang_layout)
 
         tabs = QTabWidget()
         tab_general = QWidget()
@@ -527,6 +545,13 @@ class OptionsDialog(QDialog):
                 self.cb_dhcp_iface.setCurrentText(saved)
             else:
                 self.cb_dhcp_iface.setCurrentIndex(0)
+
+    def _on_language_changed(self, index):
+        locale = self.cb_language.itemData(index)
+        if locale:
+            set_locale(locale)
+            # Update window title immediately
+            self.setWindowTitle(tr("Options"))
 
     def get_options(self):
         return {

@@ -17,6 +17,7 @@ from log import LogWidget, fix_layout, instruction
 from menu import ScrollableMenu, SheetSelectDialog
 from ssh import eeprom_flash, flash_mac_direct
 from label import ClickableLabel
+from i18n import tr, get_current_locale, set_locale
 from style import apply_dark_style, St
 from g_sheets import GoogleSheetsManager, GoogleWorker
 from dhcp_server import DhcpServer
@@ -180,13 +181,28 @@ class MacFlashGUI(QWidget):
         menu_settings = menu_bar.addMenu("Настройки")
         self.menu_sheets = ScrollableMenu(self, visible_count=6, title="Листы")
         menu_bar.addMenu(self.menu_sheets)
-        act_options = QAction("Опции...", self)
+        act_options = QAction(tr("Options..."), self)
         act_options.triggered.connect(self.open_options)
         menu_settings.addAction(act_options)
-        act_style_editor = QAction("Редактор стиля листа...", self)
-        act_style_editor.setToolTip("Визуальное редактирование conditional_format.json (ширины столбцов, правила, цвета)")
+        act_style_editor = QAction(tr("Sheet Style Editor..."), self)
+        act_style_editor.setToolTip(tr("Visual editor for conditional_format.json (column widths, rules, colors)"))
         act_style_editor.triggered.connect(self.open_style_editor)
         menu_settings.addAction(act_style_editor)
+        
+        # Language selector
+        act_language = QAction(tr("Language"), self)
+        act_language.setToolTip(tr("Change interface language (requires restart)"))
+        menu_settings.addAction(act_language)
+        self.cb_language_menu = QComboBox()
+        self.cb_language_menu.addItem(tr("Russian"), "ru")
+        self.cb_language_menu.addItem(tr("English"), "en")
+        current_locale = get_current_locale()
+        idx = self.cb_language_menu.findData(current_locale)
+        if idx >= 0:
+            self.cb_language_menu.setCurrentIndex(idx)
+        self.cb_language_menu.currentIndexChanged.connect(self._on_language_changed)
+        menu_settings.addWidget(self.cb_language_menu)
+        
         menu_settings.addSeparator()
         self.act_admin_login = QAction("Вход администратора (системный пароль)", self)
         self.act_admin_login.triggered.connect(self.admin_login_via_pkexec)
@@ -2013,6 +2029,12 @@ class MacFlashGUI(QWidget):
                 # board_prefix — не требуют действий в GUI при изменении
             except Exception as e:
                 self.log_signal(f"[ERROR] Применение настройки '{key}': {e}")
+
+    def _on_language_changed(self, index):
+        locale = self.cb_language_menu.itemData(index)
+        if locale:
+            set_locale(locale)
+            self.log_signal(tr("[INFO] Language changed to {0}, restart required").format(locale))
 
     def reset_fields(self, reset_timer=True):
         self.sn_field.clear(); self.bn_field.clear()
