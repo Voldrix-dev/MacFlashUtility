@@ -61,11 +61,18 @@ class DhcpServer:
         self.lease_callback = lease_callback or (lambda *_: None)
         self.debug = debug
         self.running = False
-        self.broadcast_address = None
+        # Вычисляем broadcast_address и prefixlen при инициализации
+        import ipaddress
+        network = ipaddress.IPv4Network(f"{server_ip}/{subnet_mask}", strict=False)
+        self.broadcast_address = str(network.broadcast_address)
+        self._prefixlen_val = network.prefixlen
         self._ipr = None
         self._thread = None
         self._stop_event = threading.Event()
         self._sniffer = None
+
+    def _prefixlen(self):
+        return self._prefixlen_val
 
     # ------------------------------------------------------------------ #
     # Публичный API
@@ -322,18 +329,22 @@ class DhcpServer:
     # DHCP option helpers
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _get_message_type(dhcp_options):
+    def _parse_options(dhcp_options):
+        """Парсит DHCP options в словарь."""
+        result = {}
         for opt in dhcp_options:
-            if isinstance(opt, tuple) and opt[0] == "message-type":
-                return opt[1]
-        return None
+            if opt == "end":
+                break
+            if isinstance(opt, tuple):
+                result[opt[0]] = opt[1]
+        return result
 
     @staticmethod
-    def _get_option(dhcp_options, name):
-        for opt in dhcp_options:
-            if isinstance(opt, tuple) and opt[0] == name:
-                return opt[1]
-        return None
+    def _get_message_type(options):
+        value = options.get("message-type")
+        if isinstance(value, bytes):
+            value = value[0]
+        return value
 
     # ------------------------------------------------------------------ #
     # Packet handler
@@ -342,59 +353,161 @@ class DhcpServer:
         if DHCP not in pkt or BOOTP not in pkt or Ether not in pkt:
             return
 
-        dhcp_options = pkt[DHCP].options
-        dhcp_type = self._get_message_type(dhcp_options)
-        if dhcp_type is None:
-            return
+        ether = pkt[Ether]
 
-        requested_ip = self._get_option(dhcp_options, "requested_addr")
-        mac = pkt[Ether].src
-        xid = pkt[BOOTP].xid
-        chaddr = pkt[BOOTP].chaddr
-        ciaddr = pkt[BOOTP].ciaddr
-
+        # Игнорируем собственные исходящие пакеты
         try:
             my_mac = get_if_hwaddr(self.interface)
         except Exception:
             my_mac = "00:00:00:00:00:00"
 
-        ether = Ether(dst=mac, src=my_mac)
-        ip = IP(src=self.server_ip, dst="255.255.255.255")
-        udp = UDP(sport=67, dport=68)
-        bootp = BOOTP(op=2, yiaddr=self.assigned_ip, siaddr=self.server_ip, chaddr=chaddr, xid=xid)
+        if ether.src.lower() == my_mac.lower():
+            return
 
-        options_common = [
-            ("server_id", self.server_ip),
-            ("subnet_mask", self.subnet_mask),
-            ("router", self.server_ip),
-            ("broadcast_address", self.broadcast_address),
-            ("lease_time", self.lease_time),
-            ("renewal_time", self.lease_time // 2),
-            ("rebinding_time", int(self.lease_time * 0.875)),
-            ("name_server", "8.8.8.8"),
-        ]
+        bootp = pkt[BOOTP]
+        options = self._parse_options(pkt[DHCP].options)
 
-        if dhcp_type == 1:  # DHCPDISCOVER
-            self._log(f"DISCOVER от {mac} — предлагаем {self.assigned_ip}", "discover")
+        msg_type = self._get_message_type(options)
+        if msg_type is None:
+            return
+
+        # Логирование входящего пакета
+        msg_names = {1: "DISCOVER", 2: "OFFER", 3: "REQUEST", 4: "DECLINE", 5: "ACK", 6: "NAK", 7: "RELEASE", 8: "INFORM"}
+        msg_name = msg_names.get(msg_type, f"TYPE-{msg_type}")
+
+        requested = options.get("requested_addr")
+        hostname = options.get("hostname")
+        server_id = options.get("server_id")
+        ciaddr = str(bootp.ciaddr)
+        mac = ether.src
+        xid = bootp.xid
+
+        if self._debug_enabled():
+            extra = []
+            if requested:
+                extra.append(f"requested={requested}")
+            if hostname:
+                extra.append(f"host={hostname}")
+            if server_id:
+                extra.append(f"server_id={server_id}")
+            self._log(f"RX {msg_name:8s} | MAC={mac:17s} | XID={xid:08x} | ciaddr={ciaddr:15s}" + (" | " + " | ".join(extra) if extra else ""), "debug")
+
+        # Не отвечаем на REQUEST, адресованный другому DHCP-серверу
+        if msg_type == 3 and server_id and server_id != self.server_ip:
+            if self._debug_enabled():
+                self._log(f"    [SKIP] REQUEST предназначен серверу {server_id}", "debug")
+            return
+
+        # Формируем ответ
+        chaddr = bootp.chaddr
+        yiaddr = "0.0.0.0"
+        reply_type = None
+        dhcp_options_list = None
+
+        if msg_type == 1:  # DHCPDISCOVER
+            reply_type = 2  # OFFER
+            yiaddr = self.assigned_ip
+            dhcp_options_list = [
+                ("message-type", "offer"),
+                ("server_id", self.server_ip),
+                ("lease_time", self.lease_time),
+                ("subnet_mask", self.subnet_mask),
+                ("router", self.server_ip),
+                ("broadcast_address", self.broadcast_address),
+                ("renewal_time", self.lease_time // 2),
+                ("rebinding_time", int(self.lease_time * 0.875)),
+                ("name_server", "8.8.8.8"),
+                "end",
+            ]
             self._emit_lease(mac, self.assigned_ip, "discover")
-            dhcp = DHCP(options=[("message-type", "offer")] + options_common + ["end"])
-        elif dhcp_type == 3:  # DHCPREQUEST
-            if requested_ip and requested_ip != self.assigned_ip:
-                self._log(f"REQUEST от {mac} — просит {requested_ip}, принудительно NAK", "nak")
-                self._emit_lease(mac, requested_ip, "nak")
-                dhcp = DHCP(options=[("message-type", "nak"), ("server_id", self.server_ip), "end"])
-            elif not requested_ip and ciaddr and ciaddr != "0.0.0.0" and ciaddr != self.assigned_ip:
-                self._log(f"REQUEST от {mac} — ciaddr {ciaddr}, принудительно NAK", "nak")
+
+        elif msg_type == 3:  # DHCPREQUEST
+            if requested and requested != self.assigned_ip:
+                reply_type = 6  # NAK
+                yiaddr = "0.0.0.0"
+                dhcp_options_list = [
+                    ("message-type", "nak"),
+                    ("server_id", self.server_ip),
+                    "end",
+                ]
+                self._emit_lease(mac, requested, "nak")
+            elif not requested and ciaddr != "0.0.0.0" and ciaddr != self.assigned_ip:
+                reply_type = 6  # NAK
+                yiaddr = "0.0.0.0"
+                dhcp_options_list = [
+                    ("message-type", "nak"),
+                    ("server_id", self.server_ip),
+                    "end",
+                ]
                 self._emit_lease(mac, ciaddr, "nak")
-                dhcp = DHCP(options=[("message-type", "nak"), ("server_id", self.server_ip), "end"])
             else:
-                self._log(f"REQUEST от {mac} — подтверждаем {self.assigned_ip}", "ack")
+                reply_type = 5  # ACK
+                yiaddr = self.assigned_ip
+                dhcp_options_list = [
+                    ("message-type", "ack"),
+                    ("server_id", self.server_ip),
+                    ("lease_time", self.lease_time),
+                    ("subnet_mask", self.subnet_mask),
+                    ("router", self.server_ip),
+                    ("broadcast_address", self.broadcast_address),
+                    ("renewal_time", self.lease_time // 2),
+                    ("rebinding_time", int(self.lease_time * 0.875)),
+                    ("name_server", "8.8.8.8"),
+                    "end",
+                ]
                 self._emit_lease(mac, self.assigned_ip, "ack")
-                dhcp = DHCP(options=[("message-type", "ack")] + options_common + ["end"])
+
+        elif msg_type == 8:  # DHCPINFORM
+            reply_type = 5  # ACK
+            yiaddr = "0.0.0.0"
+            dhcp_options_list = [
+                ("message-type", "ack"),
+                ("server_id", self.server_ip),
+                ("subnet_mask", self.subnet_mask),
+                ("router", self.server_ip),
+                ("broadcast_address", self.broadcast_address),
+                ("name_server", "8.8.8.8"),
+                "end",
+            ]
+            # INFORM не создаёт аренду
+
         else:
             return
 
-        sendp(ether / ip / udp / bootp / dhcp, iface=self.interface, verbose=0)
+        # Отправляем ответ (broadcast)
+        reply = (
+            Ether(src=my_mac, dst="ff:ff:ff:ff:ff:ff")
+            / IP(src=self.server_ip, dst="255.255.255.255")
+            / UDP(sport=67, dport=68)
+            / BOOTP(
+                op=2,
+                htype=bootp.htype,
+                hlen=bootp.hlen,
+                hops=bootp.hops,
+                xid=bootp.xid,
+                secs=bootp.secs,
+                flags=bootp.flags,
+                ciaddr=bootp.ciaddr,
+                yiaddr=yiaddr,
+                siaddr=self.server_ip,
+                giaddr=bootp.giaddr,
+                chaddr=chaddr
+            )
+            / DHCP(options=dhcp_options_list)
+        )
+
+        try:
+            sendp(reply, iface=self.interface, verbose=False)
+
+            if self._debug_enabled():
+                reply_name = msg_names.get(reply_type, f"TYPE-{reply_type}")
+                extra = []
+                extra.append(f"ip={yiaddr}")
+                extra.append(f"dst=broadcast")
+                self._log(f"TX {reply_name:8s} | MAC={mac:17s} | XID={xid:08x} | ciaddr={ciaddr:15s} | " + " | ".join(extra), "debug")
+
+        except Exception as exc:
+            self._log(f"[ERROR] DHCP send failed: {exc}", "error")
 
     # ------------------------------------------------------------------ #
     # Helpers

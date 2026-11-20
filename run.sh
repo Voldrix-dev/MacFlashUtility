@@ -128,14 +128,10 @@ VENV=""
 
 if [ -n "$CUSTOM_VENV" ] && [ -d "$CUSTOM_VENV" ]; then
     VENV="$CUSTOM_VENV"
-elif [ -n "${MACFU_VENV:-}" ] && [ -d "$MACFU_VENV" ]; then
-    VENV="$MACFU_VENV"
 elif [ -x "$PROJECT_DIR/.venv/bin/python" ]; then
     VENV="$PROJECT_DIR/.venv"
 elif [ -x "$REAL_HOME/.venv/bin/python" ]; then
     VENV="$REAL_HOME/.venv"
-elif [ -x "$PROJECT_DIR/macenv/bin/python" ]; then
-    VENV="$PROJECT_DIR/macenv"
 else
     VENV="$([ -w "$PROJECT_DIR" ] && echo "$PROJECT_DIR/.venv" || echo "$REAL_HOME/.venv")"
 fi
