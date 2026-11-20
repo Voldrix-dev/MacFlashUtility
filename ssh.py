@@ -79,7 +79,7 @@ class SSHConnection:
 def load_ssh_config():
     """Читает SSH/команды прошивки из Data/options.json."""
     cfg = {}
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Data", "options.json")
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Data", "options.json")
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
