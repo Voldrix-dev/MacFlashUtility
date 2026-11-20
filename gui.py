@@ -6,6 +6,8 @@ import subprocess
 import re
 import qtawesome as qta
 from datetime import datetime
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import Queue, Event
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QMetaObject, QCoreApplication
 from PySide6.QtGui import QFont, QAction
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QMenuBar,
@@ -602,6 +604,9 @@ class MacFlashGUI(QWidget):
         try:
             if self.current_stop_event is not None:
                 self.current_stop_event.set()
+            # Если используется ProcessPoolExecutor — отменяем фьючерс
+            if hasattr(self, "_flash_future") and self._flash_future is not None:
+                self._flash_future.cancel()
             self.log_signal("[STOP] Запрошена остановка процесса...")
             self._set_workflow("Этап: Остановка процесса")
         finally:
@@ -1709,21 +1714,116 @@ class MacFlashGUI(QWidget):
             self.btn_stop.setEnabled(True)
         except Exception:
             pass
-        signals = self._task_signals(self._on_finished)
+        
         if flash_mode == "eeprom_spi":
             self.log_debug(f"flash: start mode=eeprom_spi lan='{self.lanMac}' wan='{self.wanMac}'")
             self._set_workflow("Этап: Прошивка EEPROM")
-            run_in_thread(eeprom_flash, kwargs=dict(
-                    lan_mac=self.lanMac, wan_mac=self.wanMac,
-                    disable_shell=self.options.get("disable_shell_on_flash", False), install_script=self.options.get("install_script", "install.sh"),
-                    stop_event=self.current_stop_event, log=signals.log.emit, host=self.dhcp_host), signals=signals)
+            self._start_flash_process_pool("eeprom_spi")
         elif flash_mode == "u-boot_environment":
             self.log_debug("flash: start mode=u-boot_environment")
             self._set_workflow("Этап: Прошивка устройства (U-Boot)")
+            # U-Boot режим пока через старый поток
+            signals = self._task_signals(self._on_finished)
             run_in_thread(flash_mac_direct, kwargs=dict(
                     wan_mac=self.wanMac, disable_shell=self.options.get("disable_shell_on_flash", False),
                     install_script=self.options.get("install_script", "install.sh"), stop_event=self.current_stop_event, log=signals.log.emit, host=self.dhcp_host
-                ), signals=signals,)
+                ), signals=signals)
+
+    def _start_flash_process_pool(self, flash_mode: str):
+        """Запуск прошивки через ProcessPoolExecutor с очередью логов."""
+        if self._closing:
+            return
+        
+        # Очередь для логов из воркера
+        self._flash_log_queue = Queue()
+        self._flash_stop_event = threading.Event()
+        
+        # Параметры для воркера
+        params = {
+            "lan_mac": self.lanMac,
+            "wan_mac": self.wanMac,
+            "host": self.dhcp_host,
+            "user": self.options.get("ssh_user", "root"),
+            "password": self.options.get("ssh_password", "infinityroot"),
+            "disable_shell": self.options.get("disable_shell_on_flash", False),
+            "install_script": self.options.get("install_script", "install.sh"),
+            "nand_command": self.options.get("nand_command", ""),
+            "flash_erase": self.options.get("flash_erase", ""),
+            "mtd0": self.options.get("mtd0", ""),
+            "stop_flag": self.current_stop_event,
+        }
+        
+        if not self.busy:
+            self.busy = True
+            self._start_flash_watchdog()
+            self.log_signal("[BUSY] Начата прошивка, ввод заблокирован")
+        
+        self._flash_executor = ProcessPoolExecutor(max_workers=1)
+        self._flash_future = self._flash_executor.submit(
+            self._run_flash_worker, params
+        )
+        
+        # Таймер для чтения логов из очереди
+        self._flash_log_timer = QTimer(self)
+        self._flash_log_timer.timeout.connect(self._drain_flash_log_queue)
+        self._flash_log_timer.start(100)
+        
+        # Таймер для проверки завершения
+        self._flash_check_timer = QTimer(self)
+        self._flash_check_timer.timeout.connect(self._check_flash_future)
+        self._flash_check_timer.start(500)
+
+    def _run_flash_worker(self, params: dict) -> dict:
+        """Запуск воркера в отдельном процессе."""
+        from flash_worker import flash_worker
+        import multiprocessing
+        log_queue = multiprocessing.Queue()
+        params["stop_flag"] = multiprocessing.Event()
+        # Подменяем stop_flag на multiprocessing.Event для процесса
+        result = flash_worker(params, log_queue)
+        # Сбрасываем оставшиеся логи
+        while not log_queue.empty():
+            try:
+                log_queue.get_nowait()
+            except Exception:
+                pass
+        return result
+
+    def _drain_flash_log_queue(self):
+        """Чтение логов из очереди воркера."""
+        if not hasattr(self, "_flash_log_queue"):
+            return
+        try:
+            while True:
+                record = self._flash_log_queue.get_nowait()
+                self.log_append(record)
+        except Exception:
+            pass
+
+    def _check_flash_future(self):
+        """Проверка завершения фьючерса."""
+        if not hasattr(self, "_flash_future") or self._flash_future is None:
+            return
+        if self._flash_future.done():
+            self._flash_log_timer.stop()
+            self._flash_check_timer.stop()
+            self._flash_executor.shutdown(wait=False)
+            
+            try:
+                result = self._flash_future.result()
+            except Exception as e:
+                result = {"ok": False, "msg": str(e)}
+            
+            # Очистка
+            self._flash_future = None
+            self._flash_executor = None
+            self._flash_log_queue = None
+            self._flash_stop_event = None
+            self._flash_log_timer = None
+            self._flash_check_timer = None
+            
+            # Вызываем обработчик завершения
+            self._on_finished({"ok": result.get("ok", False), "result": result})
 
     def _init_google_sheets(self):
         if getattr(self, "gs_thread", None) and self.gs_thread.isRunning():
