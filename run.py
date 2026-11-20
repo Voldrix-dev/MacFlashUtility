@@ -11,7 +11,6 @@ os.environ["QT_LOGGING_RULES"] = "qt.qpa.services.warning=false;qt.qpa.portal.wa
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
 from gui import MacFlashGUI
-from i18n import init_translations
 
 if getattr(sys, "frozen", False):
     base_path = sys._MEIPASS
@@ -86,10 +85,6 @@ def main():
     app.setApplicationDisplayName("MacFlashUtility")
     app.setDesktopFileName("MacFlashUtility")
     app.setOrganizationName("pcuser")
-
-    # Initialize translations AFTER QApplication is created
-    from i18n import init_translations
-    init_translations()
 
     try:
         gui = MacFlashGUI(base_path)
