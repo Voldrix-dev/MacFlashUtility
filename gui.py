@@ -975,9 +975,10 @@ class MacFlashGUI(QWidget):
         if expected and event == "ack":
             if _norm_mac(mac) == _norm_mac(expected):
                 self.log_signal(f"[OK] MAC после перезагрузки совпадает: {mac}")
+                # Очищаем ожидаемый MAC, чтобы не логировать при каждом renew
+                self._expected_flash_mac = None
+                self._pre_flash_mac = None
                 if getattr(self, "_await_dhcp_confirm", False):
-                    self._expected_flash_mac = None
-                    self._pre_flash_mac = None
                     # Сигнал потокобезопасен: слот выполнится в GUI-потоке
                     self.flash_mac_confirmed.emit(mac)
             else:
@@ -1685,9 +1686,24 @@ class MacFlashGUI(QWidget):
         lease_time = int(self.options.get("dhcp_lease_time", 60) or 60)
         fresh_window = max(10, lease_time // 2)
         age = time.time() - getattr(self, "_last_dhcp_ack_time", 0.0)
-        if not self.dhcp_host or age > fresh_window:
-            self._start_dhcp_start_wait()
-            return
+        assigned_ip = self.options.get("dhcp_assigned_ip", "15.15.15.15")
+        # Если DHCP-аранды нет/протухла, но assigned_ip пингуется — устройство уже в сети.
+        # Это бывает, если у устройства статический IP или аренда давно получена и renew не шлёт.
+        if (not self.dhcp_host or age > fresh_window):
+            # Пробуем пропинговать assigned_ip
+            try:
+                import subprocess
+                result = subprocess.run(["ping", "-c", "1", "-W", "1", assigned_ip],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+                if result.returncode == 0:
+                    self.log_signal(f"[DHCP] Устройство доступно на {assigned_ip} (пинг OK), продолжаем без свежей аренды")
+                    self.dhcp_host = assigned_ip
+                    self._last_dhcp_ack_time = time.time()
+                else:
+                    raise Exception("no ping")
+            except Exception:
+                self._start_dhcp_start_wait()
+                return
         flash_mode = self.options.get("flash_mode")
         # Целевой MAC для подтверждения по DHCP
         self._expected_flash_mac = _norm_mac(self.wanMac)
