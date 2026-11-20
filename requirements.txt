@@ -2,7 +2,6 @@ PySide6
 psycopg2-binary
 gspread
 oauth2client
-paramiko
-scp
+asyncssh
 scapy
 pyroute2
