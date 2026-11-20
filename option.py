@@ -109,6 +109,7 @@ class OptionsDialog(QDialog):
         self.sl_auto_check = self._make_switch("Авто проверка S/N", self.opts.get("auto_check", True), "Проверять S/N автоматически.")
         self.sl_auto_reset = self._make_switch("Автосброс полей", self.opts.get("auto_reset", True), "Очищать поля после завершения операции.")
         self.sl_auto_board = self._make_switch("Автогенерация номера платы", self.opts.get("auto_board", True), "Если включено — номер board_XX генерируется автоматически.")
+        self.sl_auto_db_update = self._make_switch("Обновлять БД после прошивки", self.opts.get("auto_db_update", True), "Если выключено — БД и Google Sheets не обновляются (для тестов).")
         self.sl_disable_shell = self._make_switch("Применять sh скрипты при прошивке", self.opts.get("disable_shell_on_flash", False),
                                                   "Перед прошивкой применяет Data/*.sh (без reboot), затем продолжает SPI/MAC и штатную перезагрузку.")
         group_main_layout.addWidget(self.sl_debug)
@@ -118,6 +119,7 @@ class OptionsDialog(QDialog):
         group_main_layout.addWidget(self.sl_auto_check)
         group_main_layout.addWidget(self.sl_auto_reset)
         group_main_layout.addWidget(self.sl_auto_board)
+        group_main_layout.addWidget(self.sl_auto_db_update)
         group_main_layout.addWidget(self.sl_disable_shell)
         tab_general_layout.addWidget(group_main)
 
@@ -535,6 +537,7 @@ class OptionsDialog(QDialog):
             "auto_check": self.sl_auto_check.switch.isChecked(),
             "auto_reset": self.sl_auto_reset.switch.isChecked(),
             "auto_board": self.sl_auto_board.switch.isChecked(),
+            "auto_db_update": self.sl_auto_db_update.switch.isChecked(),
             "disable_shell_on_flash": self.sl_disable_shell.switch.isChecked(),
             "install_script": self.cb_install_script.currentText().strip() or "install.sh",
             "board_prefix": self.ed_board_prefix.text(),
