@@ -4,7 +4,7 @@ import json
 import asyncio
 import subprocess
 import socket
-import re, io
+import re
 from db import make_eeprom_bytes
 
 try:

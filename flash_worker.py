@@ -7,10 +7,8 @@ Logs go to multiprocessing.Queue.
 
 import os
 import sys
-import json
 import traceback
 import logging
-from datetime import datetime
 from multiprocessing import Queue
 
 # Add project root to path

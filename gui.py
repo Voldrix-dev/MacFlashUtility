@@ -18,7 +18,7 @@ from option import OptionsDialog
 from style_editor import StyleEditorDialog
 from log import LogWidget, fix_layout, instruction
 from menu import ScrollableMenu, SheetSelectDialog
-from ssh import eeprom_flash, flash_mac_direct
+from ssh import flash_mac_direct
 from label import ClickableLabel
 from style import apply_dark_style, St
 from g_sheets import GoogleSheetsManager, GoogleWorker

@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QMenu, QListWidget, QWidgetAction, QListWidgetItem, QWidget, QVBoxLayout, QLineEdit,
-    QAbstractItemView, QScrollBar, QSizePolicy, QDialog, QDialogButtonBox
+    QAbstractItemView, QSizePolicy, QDialog, QDialogButtonBox
 )
 from PySide6.QtCore import Signal, Qt, QEvent
 from PySide6.QtGui import QBrush, QColor
