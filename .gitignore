@@ -27,6 +27,7 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+test_*.py
 
 # --- Сгенерированные артефакты ---
 eeprom_files/
