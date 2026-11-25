@@ -235,16 +235,6 @@ def add_board_column(debug: bool = False):
     finally:
         conn.close()
 
-def _read_board_log():
-    counter_file = get_counter_file()
-    if not os.path.exists(counter_file):
-        return []
-    try:
-        with open(counter_file, "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
-    except OSError:
-        return []
-
 def _generate_board_id(prefix="Board_"):
     clean_prefix = (prefix or "Board_").strip()
     sep = "" if clean_prefix.endswith(("_", "-")) else "_"
