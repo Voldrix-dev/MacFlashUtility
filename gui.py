@@ -7,7 +7,7 @@ import re
 import qtawesome as qta
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import Queue, Event
+from multiprocessing import Queue
 from PySide6.QtCore import Qt, QTimer, Signal, QThread, QMetaObject, QCoreApplication
 from PySide6.QtGui import QFont, QAction
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QLabel, QPushButton, QMenuBar,
@@ -55,12 +55,7 @@ def _run_flash_worker(params: dict) -> dict:
 
 
 class Toast(QLabel):
-    """Неблокирующее всплывающее уведомление.
-
-    duration > 0 — само исчезает через указанное время;
-    duration <= 0 — висит, пока не закроют через close_toast().
-    """
-
+    """Неблокирующее всплывающее уведомление."""
     def __init__(self, parent, text, duration=6000):
         super().__init__(text, parent)
         self.setTextFormat(Qt.PlainText)
