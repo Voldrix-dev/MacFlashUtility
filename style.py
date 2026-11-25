@@ -205,6 +205,15 @@ def apply_dark_style(widget: QWidget):
             width: 10px;
             height: 10px;
         }
+
+        #Toast {
+            background: #262626;
+            color: #ffcc66;
+            border: 1px solid #cc5555;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-weight: bold;
+        }
     """)
 
 

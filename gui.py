@@ -66,10 +66,7 @@ class Toast(QLabel):
         self.setTextFormat(Qt.PlainText)
         self.setWordWrap(True)
         self.setMaximumWidth(380)
-        self.setStyleSheet(
-            "QLabel { background: #262626; color: #ffcc66; border: 1px solid #cc5555;"
-            " border-radius: 6px; padding: 10px 14px; font-weight: bold; }"
-        )
+        self.setObjectName("Toast")
         self.adjustSize()
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -108,7 +105,6 @@ class MacFlashGUI(QWidget):
     device_skipped = Signal(str, str, str)
     def __init__(self, base_path=None):
         super().__init__()
-        #self.setWindowTitle("Mac Flash Utility")
         self.setGeometry(200, 120, 820, 520)
         self.setFont(QFont("Consolas", 10))
         self.setFocusPolicy(Qt.StrongFocus) # Нужен фокус на главном виджете, иначе keyPressEvent не вызывается.
@@ -372,7 +368,7 @@ class MacFlashGUI(QWidget):
             self.act_require_board.setChecked(True)
             self.act_send_board.setChecked(True)
             self.save_options()
-            self.log_signal("[ADMIN] Админ-сессия завершена (параметры B/N сброшены в штатное состояние)")
+            self.log_signal("[ADMIN] Админ-сессия завершена")
 
     def _on_toggle_require_board(self, checked: bool):
         if not self.is_admin:
@@ -431,15 +427,15 @@ class MacFlashGUI(QWidget):
         """Ждём подтверждения нового MAC по DHCP перед записью в БД/таблицу."""
         self._await_dhcp_confirm = True
         self._last_mac_mismatch = None
-        self._set_workflow("Этап: Ожидание подтверждения MAC по DHCP")
-        self.log_signal("[WAIT] Ждём подтверждения нового MAC по DHCP...")
+        self._set_workflow("Этап: Ожидание подтверждения MAC")
+        self.log_signal("[WAIT] Ждём подтверждения нового MAC")
         self._dhcp_confirm_timer.start(120000)
 
     def _start_dhcp_start_wait(self):
         """Ждём, пока DHCP-сервер выдаст аренду — без этого прошивать нельзя."""
         self._await_dhcp_start = True
         self._set_workflow("Этап: Ожидание адреса от DHCP-сервера")
-        self.log_signal("[WAIT] Устройство не получило адрес по DHCP — ждём...")
+        self.log_signal("[WAIT] Устройство не получило адрес — ждём...")
         self._dhcp_start_timer.start(120000)
 
     def _on_dhcp_start_ready(self):
@@ -449,7 +445,7 @@ class MacFlashGUI(QWidget):
             return
         self._await_dhcp_start = False
         self._dhcp_start_timer.stop()
-        self.log_signal("[OK] DHCP-сервер выдал адрес — начинаем прошивку")
+        self.log_signal("[OK] Сервер выдал адрес — начинаем прошивку")
         self.eeprom_flash_async()
 
     def _on_dhcp_start_timeout(self):
@@ -461,7 +457,7 @@ class MacFlashGUI(QWidget):
         self._set_field_color("sn", "#ff6666")
         self._set_field_color("bn", "#ff6666")
         self._set_workflow("Этап: Устройство не появилось в DHCP")
-        self.log_signal("[ERR] Устройство не получило адрес по DHCP — прошивка отменена")
+        self.log_signal("[ERR] Устройство не получило адрес — прошивка отменена")
         self.pending_bn = None
         self.pending_sheets = None
         if self.options.get("auto_reset", True):
@@ -477,14 +473,14 @@ class MacFlashGUI(QWidget):
         self._set_field_color("sn", "#ff6666")
         self._set_field_color("bn", "#ff6666")
         self._set_workflow("Этап: MAC не подтверждён по DHCP")
-        self.log_signal("[ERR] Новый MAC не подтверждён по DHCP — запись в БД/таблицу отменена")
+        self.log_signal("[ERR] Новый MAC не подтверждён — запись в БД/таблицу отменена")
         self.pending_bn = None
         self.pending_sheets = None
         if self.options.get("auto_reset", True):
             safe_single_shot(2000, lambda: self.reset_fields(reset_timer=False))
 
     def _check_dhcp_devices(self):
-        """Периодическая проверка: устройства без операций."""
+        """Периодическая проверка: устройства без операций"""
         if self._closing:
             return
         now = time.time()
@@ -507,11 +503,7 @@ class MacFlashGUI(QWidget):
         self._update_skip_status()
 
     def _notify_skipped_device(self, mac, reason):
-        """Пометить устройство пропущенным и уведомить GUI-поток.
-
-        Может вызываться из sniff-потока: виджеты не трогаем, только
-        обновляем реестр и эмитим сигнал (Qt доставит его в GUI-поток).
-        """
+        """Пометить устройство пропущенным и уведомить GUI-поток"""
         info = self._dhcp_devices.get(mac)
         if info is None or info.get("notified"):
             return
@@ -529,7 +521,6 @@ class MacFlashGUI(QWidget):
         else:
             text = f"Устройство {mac} (IP {ip}) подключено более минуты без операций."
             log_reason = "60с без операций"
-            # Не исчезает само — закроется при вводе S/N или B/N
             toast = Toast(self, text, duration=0)
             self._idle_toasts.append(toast)
         self.log_signal(f"[WARN] Пропущено устройство: {mac} (IP {ip}) — {log_reason}")
@@ -549,7 +540,6 @@ class MacFlashGUI(QWidget):
         if not norm:
             return
         self._claimed_macs.add(norm)
-        # Устройство взято в работу — снимаем отметку «пропущено»
         info = self._dhcp_devices.get(norm)
         if info is not None and info.get("notified"):
             info["notified"] = False
@@ -579,8 +569,7 @@ class MacFlashGUI(QWidget):
         self._set_field_color("sn", "#66cc66")
         self._set_field_color("bn", "#66cc66")
         self.update_finish_status(True)
-        # B/N мог быть отсканирован во время ожидания подтверждения
-        if self.pending_bn:
+        if self.pending_bn: # B/N мог быть отсканирован во время ожидания подтверждения
             pb = self.pending_bn
             self.serial_number = pb.get("sn", self.serial_number)
             self.board_number = pb.get("bn", self.board_number)
@@ -609,8 +598,7 @@ class MacFlashGUI(QWidget):
                 self.log_signal("[WARN] Postcheck не запущен — проверьте S/N и B/N")
                 if self.options.get("auto_reset", True):
                     safe_single_shot(2000, lambda: self.reset_fields(reset_timer=False))
-        else:
-            # B/N ещё не отсканирован — сброс не делаем, ждём скан
+        else: # B/N ещё не отсканирован — сброс не делаем, ждём скан
             self.ready_for_bn = True
 
     def stop_current_operation(self):
@@ -620,7 +608,6 @@ class MacFlashGUI(QWidget):
         try:
             if self.current_stop_event is not None:
                 self.current_stop_event.set()
-            # Если используется ProcessPoolExecutor — отменяем фьючерс
             if hasattr(self, "_flash_future") and self._flash_future is not None:
                 self._flash_future.cancel()
             self.log_signal("[STOP] Запрошена остановка процесса...")
@@ -709,13 +696,11 @@ class MacFlashGUI(QWidget):
         act_input = QAction("Ввести", self)
         act_input.triggered.connect(lambda: self._manual_input_to_field(target))
         menu.addAction(act_input)
-        # Тестовый ввод MAC-адреса для запуска прошивки (только для S/N поля)
-        if target == "sn":
+        if target == "sn": # Тестовый ввод MAC-адреса для запуска прошивки (только для S/N поля)
             act_test_mac = QAction("Тест: ввести MAC-адрес для прошивки", self)
             act_test_mac.triggered.connect(lambda: self._test_input_mac_for_flash())
             menu.addAction(act_test_mac)
-        # Тестовая отправка в Google Sheets — только для админа
-        if self.is_admin and self.options.get("run_sheets", False):
+        if self.is_admin and self.options.get("run_sheets", False): # Тестовая отправка в Google Sheets — только для админа
             act_test = QAction("Тестовая отправка в Google Sheets", self)
             act_test.triggered.connect(lambda: self._test_send_to_sheets())
             menu.addAction(act_test)
@@ -732,17 +717,14 @@ class MacFlashGUI(QWidget):
         text, ok = QInputDialog.getText(self, "Тест: ввод MAC-адреса", "Введите MAC-адрес (например: 00:11:22:33:44:55):")
         if not ok:
             return
-        # Принимаем любой формат: 32b768cd0458, 32:b7:68:cd:04:58, 32-B7-68-CD-04-58
-        norm = _norm_mac(text)
+        norm = _norm_mac(text) # Принимаем любой формат: 32b768cd0458, 32:b7:68:cd:04:58, 32-B7-68-CD-04-58
         if len(norm) != 12:
             QMessageBox.warning(self, "Неверный MAC", "MAC-адрес должен содержать 12 hex-символов (например: 32:b7:68:cd:04:58 или 32b768cd0458)")
             return
         mac = ":".join(norm[i:i+2] for i in range(0, 12, 2)).upper()
-        # Устанавливаем MAC как WAN (и LAN для одноинтерфейсных)
-        self.wanMac = mac
+        self.wanMac = mac # Устанавливаем MAC как WAN (и LAN для одноинтерфейсных)
         self.lanMac = mac
-        # Если нет серийника — ставим тестовый
-        if not self.serial_number:
+        if not self.serial_number: # Если нет серийника — ставим тестовый
             self.serial_number = "TEST-SN-MAC"
             self._set_field_text("sn", self.serial_number)
             self.update_sn_info(self.serial_number, False)
@@ -751,9 +733,7 @@ class MacFlashGUI(QWidget):
         self._test_mode = True
         self.log_signal("[TEST] Запуск механизма прошивки...")
         self._set_workflow("Этап: Тестовая прошивка (MAC введён вручную)")
-        # Запускаем прошивку (генерация EEPROM внутри eeprom_flash)
-        self.eeprom_flash_async()
-        # _test_mode сбросится в _on_finished после завершения прошивки
+        self.eeprom_flash_async() # Запускаем прошивку (генерация EEPROM внутри eeprom_flash)
 
     def _test_delete_from_sheets(self):
         """Удаляет тестовую запись из Google Sheets по текущим значениям полей."""
@@ -765,22 +745,18 @@ class MacFlashGUI(QWidget):
             return
         serial = (self.sn_field.text() or "").strip()
         board = (self.bn_field.text() or "").strip()
-        # Если поля пустые — генерируем тестовые значения (как при отправке)
-        if not serial and not board:
+        if not serial and not board: # Если поля пустые — генерируем тестовые значения (как при отправке)
             serial = "TEST-SN-001"
             board = "TEST-BN-001"
         elif not serial:
             serial = "TEST-SN-001"
         elif not board:
             board = "TEST-BN-001"
-        # Учитываем настройки send_board_number
-        if not self.options.get("send_board_number", True):
+        if not self.options.get("send_board_number", True): # Учитываем настройки send_board_number
             board = datetime.now().strftime("%d:%m:%y_%H:%M:%S")
-        # Проверяем, выбран ли лист
-        if not self._ensure_sheet_selected():
+        if not self._ensure_sheet_selected(): # Проверяем, выбран ли лист
             return
-        # Удаляем через gs_worker
-        if hasattr(self, "gs_worker") and self.gs_worker and self.gs_thread and self.gs_thread.isRunning():
+        if hasattr(self, "gs_worker") and self.gs_worker and self.gs_thread and self.gs_thread.isRunning(): # Удаляем через gs_worker
             self.log_signal(f"[TEST] Удаляю тестовую запись: S/N={serial} | B/N={board}")
             self.request_delete_record.emit(serial, board)
         else:
@@ -805,13 +781,10 @@ class MacFlashGUI(QWidget):
             serial = "TEST-SN-001"
         elif not board:
             board = "TEST-BN-001"
-        # Учитываем настройки send_board_number
-        if not self.options.get("send_board_number", True):
+        if not self.options.get("send_board_number", True): # Учитываем настройки send_board_number
             board = datetime.now().strftime("%d:%m:%y_%H:%M:%S")
-        # Проверяем, выбран ли лист
-        if not self._ensure_sheet_selected():
+        if not self._ensure_sheet_selected(): # Проверяем, выбран ли лист
             return
-        # Отправляем через gs_worker
         if hasattr(self, "gs_worker") and self.gs_worker and self.gs_thread and self.gs_thread.isRunning():
             self.log_signal(f"[TEST] Отправляю тестовую запись: S/N={serial} | B/N={board}")
             self.request_add_record.emit(serial, board)
@@ -899,33 +872,24 @@ class MacFlashGUI(QWidget):
             self.log_debug(f"MODE: {mode}")
             self._set_workflow(f"Этап: Режим {mode}, ожидаем S/N")
 
-    # ------------------------------------------------------------------ #
-    # DHCP-сервер
-    # ------------------------------------------------------------------ #
     def _start_dhcp_server(self):
         """Запустить DHCP-сервер в отдельном daemon-потоке (threading.Thread, не QThread).
         При любой ошибке — просто логирует и продолжает работу без сервера."""
         try:
-            # Уже запущен — не запускаем повторно
-            if self.dhcp_worker is not None and self.dhcp_worker.running:
+            if self.dhcp_worker is not None and self.dhcp_worker.running: # Уже запущен — не запускаем повторно
                 return
-
-            # Сначала останавливаем старый сервер, если есть
-            if self.dhcp_worker is not None:
+            if self.dhcp_worker is not None: # Сначала останавливаем старый сервер, если есть
                 self._stop_dhcp_server()
-
             iface = (self.options.get("dhcp_interface") or "").strip()
             if not iface:
                 if self.options.get("debug", False):
                     self.log_signal("[DHCP] Интерфейс не выбран — сервер не запущен (работа без DHCP)")
                 self._update_dhcp_status(False)
                 return
-
             server_ip = self.options.get("dhcp_server_ip", "15.15.15.1")
             assigned_ip = self.options.get("dhcp_assigned_ip", "15.15.15.15")
             mask = self.options.get("dhcp_subnet_mask", "255.255.255.0")
             lease = self.options.get("dhcp_lease_time", 60)
-
             self.dhcp_worker = DhcpServer(
                 interface=iface,
                 server_ip=server_ip,
@@ -956,8 +920,7 @@ class MacFlashGUI(QWidget):
         self._update_dhcp_status(False)
         self.log_signal("[DHCP] Сервер остановлен")
 
-    def _on_dhcp_log(self, text, tag):
-        # Вызывается из sniff-потока (не GUI) — сигнал Qt с QueuedConnection доставит в GUI поток
+    def _on_dhcp_log(self, text, tag): # Вызывается из sniff-потока (не GUI) — сигнал Qt с QueuedConnection доставит в GUI поток
         if self._closing:
             return
         if tag == "error" or tag == "info" or self.options.get("debug", False):
@@ -965,10 +928,8 @@ class MacFlashGUI(QWidget):
 
     def _on_dhcp_lease(self, mac, ip, event):
         """Событие аренды DHCP: запомнить последний хост и MAC для прошивки.
-
-        Вызывается из sniff-потока (не GUI) — не трогаем виджеты,
-        только обновляем внутренние переменные и пишем в лог через сигнал.
-        """
+           Вызывается из sniff-потока (не GUI) — не трогаем виджеты,
+           только обновляем внутренние переменные и пишем в лог через сигнал"""
         if self._closing:
             return
         self.dhcp_host = ip
@@ -986,7 +947,6 @@ class MacFlashGUI(QWidget):
                 else:
                     info["last_seen"] = now
                     info["ip"] = ip
-            # Смена MAC на том же IP = предыдущее устройство отключилось
             last = getattr(self, "_last_dhcp_ack", None)
             if last is not None:
                 prev_mac, prev_ip = last
@@ -997,27 +957,21 @@ class MacFlashGUI(QWidget):
             if last != (mac, ip):
                 self._last_dhcp_ack = (mac, ip)
                 self.log_signal(f"[DHCP] Целевой хост для прошивки установлен: {ip} (MAC: {mac})")
-            # Прошивка ждёт свежую аренду — сигналим в GUI-поток
-            if getattr(self, "_await_dhcp_start", False):
+            if getattr(self, "_await_dhcp_start", False): # Прошивка ждёт свежую аренду — сигналим в GUI-поток
                 self.dhcp_start_ready.emit()
-
-        # Сравниваем MAC после перезагрузки с тем, который прошивали
         expected = getattr(self, "_expected_flash_mac", None)
         if expected and event == "ack":
             if _norm_mac(mac) == _norm_mac(expected):
                 self.log_signal(f"[OK] MAC после перезагрузки совпадает: {mac}")
-                # Очищаем ожидаемый MAC, чтобы не логировать при каждом renew
                 self._expected_flash_mac = None
                 self._pre_flash_mac = None
-                if getattr(self, "_await_dhcp_confirm", False):
-                    # Сигнал потокобезопасен: слот выполнится в GUI-потоке
+                if getattr(self, "_await_dhcp_confirm", False): # Сигнал потокобезопасен: слот выполнится в GUI-потоке
                     self.flash_mac_confirmed.emit(mac)
             else:
                 norm_mac = _norm_mac(mac)
                 pre = getattr(self, "_pre_flash_mac", None)
                 if pre and norm_mac == pre:
-                    # Это старый MAC устройства до прошивки (stale renew) — не предупреждаем
-                    if self.options.get("debug", False):
+                    if self.options.get("debug", False): # Это старый MAC устройства до прошивки (stale renew) — не предупреждаем
                         self.log_signal(f"[DHCP] ACK от до-прошивочного MAC {mac} — пропускаем (stale)")
                 else:
                     last_mismatch = getattr(self, "_last_mac_mismatch", None)
@@ -1075,7 +1029,6 @@ class MacFlashGUI(QWidget):
             return
         if getattr(self, "gs_worker", None):
             self.log_signal("[INFO] Google Sheets отключён — закрываю соединение")
-            # disconnect requests -> worker
             self._try_shutdown(self.request_open_sheet.disconnect, self.gs_worker.open_sheet_in_browser)
             self._try_shutdown(self.request_select_sheet.disconnect, self.gs_worker.select_sheet)
             self._try_shutdown(self.request_fetch_sheets.disconnect, self.gs_worker.fetch_sheets)
@@ -1083,13 +1036,11 @@ class MacFlashGUI(QWidget):
             self._try_shutdown(self.request_add_record.disconnect, self.gs_worker.add_record)
             self._try_shutdown(self.request_delete_record.disconnect, self.gs_worker.delete_record)
             self._try_shutdown(self.request_stop_worker.disconnect, self.gs_worker.stop)
-            # disconnect worker -> gui
             self._try_shutdown(self.gs_worker.log.disconnect, self._signals.log.emit)
             self._try_shutdown(self.gs_worker.result.disconnect, self.handle_google_result)
             self._try_shutdown(self.gs_worker.sheet_list_ready.disconnect, self._populate_sheet_menu)
             self._try_shutdown(self.gs_worker.current_sheet_changed.disconnect, self.set_current_sheet_label)
             self._try_shutdown(self.gs_worker.sheet_status.disconnect, self.update_sheet_status)
-            # disconnect menu -> requests
             self._try_shutdown(self.menu_sheets.sheet_selected.disconnect, self.request_select_sheet.emit)
             self._try_shutdown(self.menu_sheets.aboutToShow.disconnect, self.request_fetch_sheets.emit)
             self._try_shutdown(self.request_stop_worker.emit)
@@ -1097,9 +1048,8 @@ class MacFlashGUI(QWidget):
         self.set_current_sheet_label("")
         if getattr(self, "gs_thread", None) and self.gs_thread.isRunning():
             self.gs_thread.quit()
-            # Ждём реального завершения, не более 10 секунд суммарно
             t0 = time.time()
-            while self.gs_thread.isRunning() and (time.time() - t0) < 10.0:
+            while self.gs_thread.isRunning() and (time.time() - t0) < 10.0: # Ждём реального завершения, не более 10 секунд суммарно
                 self.gs_thread.wait(200)
             if self.gs_thread.isRunning():
                 self.log_signal("[WARN] Поток GoogleWorker не завершился за 10с")
@@ -1110,9 +1060,6 @@ class MacFlashGUI(QWidget):
         self.gs_manager = None
         self.gs_worker = None
         self.gs_thread = None
-        # Не вызываем deleteLater() на worker/thread: поток уже остановлен,
-        # его event loop не обработает событие удаления — это приводит к double free.
-        # Python GC сам соберёт объекты после обнуления ссылок.
         self.menu_sheets.populate(None)
 
     def _start_gs_sheet_refresh_timer(self):
@@ -1232,8 +1179,7 @@ class MacFlashGUI(QWidget):
                 else:
                     self.log_debug("Отложено: Пропуск update_postcheck — S/N ещё не получен")
                 return
-            if getattr(self, "_await_dhcp_confirm", False):
-                # Ждём подтверждения MAC по DHCP — B/N отложим до подтверждения
+            if getattr(self, "_await_dhcp_confirm", False): # Ждём подтверждения MAC по DHCP — B/N отложим до подтверждения
                 self.pending_bn = {
                     "sn": self.serial_number, "bn": self.board_number,
                     "lan": (getattr(self, "lanMac", "") or "").strip(),
@@ -1299,11 +1245,9 @@ class MacFlashGUI(QWidget):
             return True
         sheets = list(getattr(self.menu_sheets, "_all_sheets", []) or [])
         if not sheets:
-            # Пробуем обновить список перед показом меню
-            if getattr(self, "gs_worker", None):
+            if getattr(self, "gs_worker", None): # Пробуем обновить список перед показом меню
                 self.request_fetch_sheets.emit()
-            # Ждём briefly, если gs_worker есть
-            if getattr(self, "gs_worker", None) and getattr(self.gs_worker, "gs", None):
+            if getattr(self, "gs_worker", None) and getattr(self.gs_worker, "gs", None): # Ждём briefly, если gs_worker есть
                 sheets = self.gs_worker.gs.get_sheet_list()
                 self.menu_sheets.populate(sheets)
             else:
@@ -1329,10 +1273,8 @@ class MacFlashGUI(QWidget):
         if not title:
             self.log_signal("[INFO] Прошивка приостановлена: лист Google Sheets не выбран")
             return False
-        # Используем select_sheet (асинхронный), но проверяем результат
-        if not self.select_sheet(title):
+        if not self.select_sheet(title): # Используем select_sheet (асинхронный), но проверяем результат
             return False
-        # select_sheet уже обновляет current_sheet_label при успехе
         self.log_signal(f"[INFO] Выбран лист Google Sheets: {title}")
         return True
 
@@ -1388,8 +1330,7 @@ class MacFlashGUI(QWidget):
         """Add timestamp if missing and append to log widget."""
         if self._closing:
             return
-        # Add timestamp if message doesn't already have one
-        if not re.match(r"^\[\d{2}:\d{2}:\d{2}\]", text):
+        if not re.match(r"^\[\d{2}:\d{2}:\d{2}\]", text): # Add timestamp if message doesn't already have one
             ts = datetime.now().strftime("%H:%M:%S")
             text = f"[{ts}] {text}"
         self.log.append_log(text)
@@ -1624,8 +1565,7 @@ class MacFlashGUI(QWidget):
             self.log_signal(f"[OK] {result.get('msg')}")
             self.safe_remove_eeprom(self.eeprom_path)
             self._test_mode = False
-            # Применяем B/N, если он был отсканирован во время прошивки
-            if self.pending_bn:
+            if self.pending_bn: # Применяем B/N, если он был отсканирован во время прошивки
                 pb = self.pending_bn
                 self.serial_number = pb.get("sn", self.serial_number)
                 self.board_number = pb.get("bn", self.board_number)
@@ -1646,26 +1586,19 @@ class MacFlashGUI(QWidget):
                 if self.options.get("auto_reset", True):
                     safe_single_shot(2000, lambda: self.reset_fields(reset_timer=False))
                 return
-            # Не пишем в БД/таблицу, пока устройство не вернётся с новым MAC.
-            # Подтверждение приходит из DHCP (_on_dhcp_lease -> _on_flash_mac_confirmed).
             board = (self.board_number or "").strip()
             if board and self.dhcp_worker is not None:
                 self.ready_for_bn = False
-                # Сравниваем с целевым MAC (wanMac), а не с _expected_flash_mac:
-                # DHCP ACK мог прийти до завершения прошивки и сбросить флаг.
                 expected = _norm_mac(self.wanMac)
-                if expected and _norm_mac(self.dhcp_mac) == expected:
-                    # MAC уже подтверждён до завершения прошивки
+                if expected and _norm_mac(self.dhcp_mac) == expected: # MAC уже подтверждён до завершения прошивки
                     self._await_dhcp_confirm = True
                     self._on_flash_mac_confirmed(self.dhcp_mac)
                 else:
                     self._start_dhcp_confirm_wait()
-            elif board:
-                # DHCP не запущен — подтвердить нельзя, пишем сразу
+            elif board: # DHCP не запущен — подтвердить нельзя, пишем сразу
                 self._await_dhcp_confirm = True
                 self._on_flash_mac_confirmed(self.dhcp_mac or self.wanMac)
-            else:
-                # B/N ещё не получен — ждём скан, postcheck только после DHCP
+            else: # B/N ещё не получен — ждём скан, postcheck только после DHCP
                 self._start_dhcp_confirm_wait()
                 self.ready_for_bn = True
             return
@@ -1684,8 +1617,6 @@ class MacFlashGUI(QWidget):
         if not (self.lanMac or "").strip() and not (self.wanMac or "").strip():
             self.log_signal("[ERR] Mac-адреса отсутствуют")
             return
-        # Гейт: прошивать только когда DHCP-сервер выдал свежую аренду.
-        # Иначе устройство ещё не в сети и SSH-подключение обречено.
         if self.dhcp_worker is None:
             self.log_signal("[ERR] DHCP-сервер не запущен — прошивка невозможна")
             self._set_workflow("Этап: DHCP-сервер не запущен")
@@ -1695,10 +1626,7 @@ class MacFlashGUI(QWidget):
         fresh_window = max(10, lease_time // 2)
         age = time.time() - getattr(self, "_last_dhcp_ack_time", 0.0)
         assigned_ip = self.options.get("dhcp_assigned_ip", "15.15.15.15")
-        # Если DHCP-аранды нет/протухла, но assigned_ip пингуется — устройство уже в сети.
-        # Это бывает, если у устройства статический IP или аренда давно получена и renew не шлёт.
         if (not self.dhcp_host or age > fresh_window):
-            # Пробуем пропинговать assigned_ip
             try:
                 import subprocess
                 result = subprocess.run(["ping", "-c", "1", "-W", "1", assigned_ip],
@@ -1713,12 +1641,8 @@ class MacFlashGUI(QWidget):
                 self._start_dhcp_start_wait()
                 return
         flash_mode = self.options.get("flash_mode")
-        # Целевой MAC для подтверждения по DHCP
         self._expected_flash_mac = _norm_mac(self.wanMac)
-        # MAC устройства до прошивки: его DHCP-пакеты (renew/разовое продление)
-        # могут прийти уже после reboot и НЕ являются несовпадением.
         self._pre_flash_mac = _norm_mac(self.dhcp_mac)
-        # Помечаем устройство как «в работе» (и текущий, и целевой MAC)
         self._mark_claimed(self.dhcp_mac)
         self._mark_claimed(self.wanMac)
         if not self.busy:
@@ -1738,7 +1662,6 @@ class MacFlashGUI(QWidget):
         elif flash_mode == "u-boot_environment":
             self.log_debug("flash: start mode=u-boot_environment")
             self._set_workflow("Этап: Прошивка устройства (U-Boot)")
-            # U-Boot режим пока через старый поток
             signals = self._task_signals(self._on_finished)
             run_in_thread(flash_mac_direct, kwargs=dict(
                     wan_mac=self.wanMac, disable_shell=self.options.get("disable_shell_on_flash", False),
@@ -1749,13 +1672,9 @@ class MacFlashGUI(QWidget):
         """Запуск прошивки через ProcessPoolExecutor с очередью логов."""
         if self._closing:
             return
-        
-        # Очередь для логов из воркера
-        self._flash_log_queue = Queue()
+        self._flash_log_queue = Queue() # Очередь для логов из воркера
         self._flash_stop_event = threading.Event()
-        
-        # Параметры для воркера
-        params = {
+        params = { # Параметры для воркера
             "lan_mac": self.lanMac,
             "wan_mac": self.wanMac,
             "host": self.dhcp_host,
@@ -1767,23 +1686,15 @@ class MacFlashGUI(QWidget):
             "flash_erase": self.options.get("flash_erase", ""),
             "mtd0": self.options.get("mtd0", ""),
         }
-        
         if not self.busy:
             self.busy = True
             self._start_flash_watchdog()
             self.log_signal("[BUSY] Начата прошивка, ввод заблокирован")
-        
         self._flash_executor = ProcessPoolExecutor(max_workers=1)
-        self._flash_future = self._flash_executor.submit(
-            _run_flash_worker, params
-        )
-        
-        # Таймер для чтения логов из очереди
+        self._flash_future = self._flash_executor.submit(_run_flash_worker, params)
         self._flash_log_timer = QTimer(self)
         self._flash_log_timer.timeout.connect(self._drain_flash_log_queue)
         self._flash_log_timer.start(100)
-        
-        # Таймер для проверки завершения
         self._flash_check_timer = QTimer(self)
         self._flash_check_timer.timeout.connect(self._check_flash_future)
         self._flash_check_timer.start(500)
@@ -1807,22 +1718,17 @@ class MacFlashGUI(QWidget):
             self._flash_log_timer.stop()
             self._flash_check_timer.stop()
             self._flash_executor.shutdown(wait=False)
-            
             try:
                 result = self._flash_future.result()
             except Exception as e:
                 result = {"ok": False, "msg": str(e)}
-            
-            # Очистка
             self._flash_future = None
             self._flash_executor = None
             self._flash_log_queue = None
             self._flash_stop_event = None
             self._flash_log_timer = None
             self._flash_check_timer = None
-            
-            # Вызываем обработчик завершения
-            self._on_finished({"ok": result.get("ok", False), "result": result})
+            self._on_finished({"ok": result.get("ok", False), "result": result}) # Вызываем обработчик завершения
 
     def _init_google_sheets(self):
         if getattr(self, "gs_thread", None) and self.gs_thread.isRunning():
@@ -1836,7 +1742,6 @@ class MacFlashGUI(QWidget):
         gs_sheet_cols = self.options.get("gs_sheet_cols", 2)
         gs_row_template = ((self.options.get("gs_row_template", "") or "").strip() or "{board:<50} |    {serial}    |")
         gs_header_template = ((self.options.get("gs_header_template", "") or "").strip() or "{board:<50} | Всего: {count} | {serial}")
-        # Путь к ключу и имя таблицы берутся из опций всегда (не только при кастомном конфиге)
         raw_path = (self.options.get("gs_credentials_path", "") or "").strip()
         if raw_path:
             gs_credentials_path = raw_path if os.path.isabs(raw_path) else os.path.join(self.base_path, raw_path)
@@ -1963,9 +1868,8 @@ class MacFlashGUI(QWidget):
         try:
             if dlg.exec() == QDialog.Accepted:
                 self.options = self.load_options()
-                # Обновляем параметры активного менеджера листов без пересоздания
                 mgr = getattr(self, "gs_manager", None)
-                if mgr is not None:
+                if mgr is not None: # Обновляем параметры активного менеджера листов без пересоздания
                     mgr.header_template = (self.options.get("gs_header_template", "") or "").strip() or "{board:<50} | Всего: {count} | {serial}"
                     mgr.row_template = (self.options.get("gs_row_template", "") or "").strip() or "{board:<50} |    {serial}    |"
                     mgr.sheet_rows = self.options.get("gs_sheet_rows", 500)
@@ -1997,7 +1901,6 @@ class MacFlashGUI(QWidget):
             self.log_signal(f"[ERROR] Ошибка в диалоге настроек: {e}")
             self.log_signal(traceback.format_exc())
             return
-
         new_opts = None
         old_opts = dict(self.options)
         if accepted:
@@ -2006,23 +1909,16 @@ class MacFlashGUI(QWidget):
             except Exception as e:
                 self.log_signal(f"[ERROR] Ошибка сохранения настроек в файл: {e}")
                 return
-            # Перечитываем опции из файла (диалог уже сохранил их туда)
-            self.options = self.load_options()
+            self.options = self.load_options() # Перечитываем опции из файла (диалог уже сохранил их туда)
             new_opts = self.options
-
-        # Явно удаляем диалог, чтобы shiboken не пытался удалить C++ объект
-        # из неверного контекста при выходе dlg из области видимости.
-        try:
+        try: # Явно удаляем диалог, чтобы shiboken не пытался удалить C++ объект из неверного контекста при выходе dlg из области видимости.
             dlg.deleteLater()
         except Exception:
             pass
         dlg = None
-
         if new_opts is None:
             return
-
-        # Находим только реально изменённые ключи
-        changed_keys = [k for k in new_opts if old_opts.get(k) != new_opts[k]]
+        changed_keys = [k for k in new_opts if old_opts.get(k) != new_opts[k]] # Находим только реально изменённые ключи
         if not changed_keys:
             self.log_debug("SETTINGS: Изменений нет — ничего не обновляем")
             return
@@ -2042,23 +1938,15 @@ class MacFlashGUI(QWidget):
         db_keys = {"db_user", "db_password", "db_host", "db_port",
                    "db_name", "counter_file"}
         managed_keys = dhcp_keys | gs_keys | ui_keys | ssh_keys | db_keys
-
-        # Ключи, которыми управляет диалог настроек (остальные — например
-        # admin_session_seconds, author — просто применяются к self.options
-        # без действий в GUI и не выводятся в лог как изменения).
         changed_managed = [k for k in changed_keys if k in managed_keys]
         if not changed_managed:
             self.log_debug("SETTINGS: Изменены только служебные ключи, действий в GUI не требуется")
             return
-
         changed_dhcp = [k for k in changed_managed if k in dhcp_keys]
         changed_gs = [k for k in changed_managed if k in gs_keys]
         changed_ui = [k for k in changed_managed if k in ui_keys]
         self.log_debug(f"SETTINGS: Изменённые ключи: {changed_managed}")
         self.log_signal(f"[SETTINGS] Применены изменения: {', '.join(changed_managed)}")
-
-        # Точечное обновление — каждый компонент обновляется только если
-        # изменились именно его ключи, а не всё приложение разом.
         if changed_dhcp:
             try:
                 self._stop_dhcp_server()
@@ -2066,24 +1954,18 @@ class MacFlashGUI(QWidget):
                 self.log_signal(f"[DHCP] Перезапущен (ключи: {', '.join(changed_dhcp)})")
             except Exception as e:
                 self.log_signal(f"[ERROR] Перезапуск DHCP: {e}")
-
         if changed_gs:
             try:
                 self.update_gs()
                 self.log_signal(f"[GS] Переинициализирован (ключи: {', '.join(changed_gs)})")
             except Exception as e:
                 self.log_signal(f"[ERROR] update_gs: {e}")
-
         for key in changed_ui:
             try:
                 if key == "flash_mode":
                     self.update_ui()
-                elif key == "debug":
-                    # уровень логирования уже применяется через logging.debug
+                elif key == "debug": # уровень логирования уже применяется через logging.debug
                     pass
-                # recovery_mod, board_check, auto_check, auto_reset,
-                # auto_board, disable_shell_on_flash, install_script,
-                # board_prefix — не требуют действий в GUI при изменении
             except Exception as e:
                 self.log_signal(f"[ERROR] Применение настройки '{key}': {e}")
 
@@ -2136,7 +2018,6 @@ class MacFlashGUI(QWidget):
         self._closing = True
         try:
             print("EXIT: Завершаем фоновые процессы...")
-            # 1. Сначала отключаем ВСЕ сигналы от воркеров — чтобы больше не приходило в GUI
             if getattr(self, "gs_worker", None):
                 try:
                     self.gs_worker.log.disconnect()
@@ -2172,10 +2053,8 @@ class MacFlashGUI(QWidget):
                     self.menu_sheets.aboutToShow.disconnect()
                 except Exception:
                     pass
-            # 2. Останавливаем все таймеры
             for timer in self.findChildren(QTimer):
                 self._try_shutdown(timer.stop)
-            # 3. Останавливаем Google Sheets (ждёт завершения потока)
             if getattr(self, "gs_worker", None) and getattr(self, "gs_thread", None):
                 try:
                     self._stop_gs_timers()
@@ -2193,9 +2072,7 @@ class MacFlashGUI(QWidget):
                 self.gs_worker = None
                 self.gs_thread = None
                 print("OK: Ссылки GoogleWorker обнулены")
-            # 4. Останавливаем DHCP-сервер (ждёт завершения потока)
             self._stop_dhcp_server()
-            # 5. Останавливаем DeviceWatcher (ждёт завершения потока)
             if getattr(self, "device_watcher", None):
                 stop_dw = getattr(self.device_watcher, "stop", None)
                 if callable(stop_dw):
