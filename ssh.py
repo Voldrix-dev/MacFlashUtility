@@ -302,16 +302,6 @@ def wait_for_ssh_stable(host, user, password, timeout=120, delay=2, required_ok=
     return None
 
 
-async def _connect_async(host, user, password, timeout=10):
-    """Создаёт асинхронное SSH-соединение."""
-    return await asyncssh.connect(
-        host, username=user, password=password,
-        known_hosts=None,
-        login_timeout=timeout,
-        connect_timeout=timeout,
-    )
-
-
 def _connect_ssh_with_retry(host, user, password, log=print, attempts=12, delay=3, stop_event=None):
     """Подключение SSH с ожиданием порта и перезапуском сессии на каждой попытке."""
     if stop_event is not None and stop_event.is_set():
